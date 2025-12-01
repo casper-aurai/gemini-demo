@@ -35,6 +35,30 @@ const App: React.FC = () => {
   const [cmdQuery, setCmdQuery] = useState('');
   const cmdInputRef = useRef<HTMLInputElement>(null);
 
+  const reconcileInventoryNotifications = (
+    items: InventoryItem[],
+    existingNotifications: Notification[],
+  ): Notification[] => {
+    const nonInventory = existingNotifications.filter(n => !n.id.startsWith('inv-'));
+
+    const inventoryAlerts = items
+      .filter(item => item.quantity <= item.minLevel)
+      .map(item => {
+        const id = `inv-${item.id}`;
+        const previous = existingNotifications.find(n => n.id === id);
+
+        return {
+          id,
+          type: 'alert' as const,
+          message: `Low stock: ${item.name} (${item.quantity} ${item.unit})`,
+          timestamp: previous?.timestamp ?? Date.now(),
+          read: previous?.read ?? false,
+        };
+      });
+
+    return [...nonInventory, ...inventoryAlerts];
+  };
+
   // --- PERSISTENCE ---
   useEffect(() => {
     const load = (key: string, setter: any, seed: any) => {
@@ -80,14 +104,17 @@ const App: React.FC = () => {
     // Mock Notifications
     setNotifications([
         { id: '1', type: 'alert', message: 'Kärcher WD 6 P maintenance overdue', timestamp: Date.now(), read: false },
-        { id: '2', type: 'info', message: 'Low stock: 6061 Aluminum', timestamp: Date.now() - 100000, read: false }
+        { id: '2', type: 'info', message: 'New analytics report available', timestamp: Date.now() - 100000, read: false }
     ]);
 
   }, []);
 
   // Save on Change
   useEffect(() => localStorage.setItem('construct_os_projects', JSON.stringify(projects)), [projects]);
-  useEffect(() => localStorage.setItem('construct_os_inventory', JSON.stringify(inventory)), [inventory]);
+  useEffect(() => {
+    localStorage.setItem('construct_os_inventory', JSON.stringify(inventory));
+    setNotifications(prev => reconcileInventoryNotifications(inventory, prev));
+  }, [inventory]);
   useEffect(() => localStorage.setItem('construct_os_machines', JSON.stringify(machines)), [machines]);
   useEffect(() => localStorage.setItem('construct_os_vendors', JSON.stringify(vendors)), [vendors]);
   useEffect(() => localStorage.setItem('construct_os_docs', JSON.stringify(docs)), [docs]);
@@ -168,6 +195,7 @@ const App: React.FC = () => {
   // --- RENDER HELPERS ---
   const filteredProjects = projects.filter(p => p.title.toLowerCase().includes(searchTerm.toLowerCase()));
   const selectedProject = projects.find(p => p.id === selectedProjectId);
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   const NavItem = ({ view, icon: Icon, label }: { view: ViewMode, icon: any, label: string }) => (
       <button 
@@ -271,7 +299,7 @@ const App: React.FC = () => {
         <header className="h-14 border-b border-zinc-900 bg-zinc-950 flex items-center justify-between px-6 flex-shrink-0">
              <Breadcrumbs />
              
-             <div className="flex items-center gap-4">
+                 <div className="flex items-center gap-4">
                  <button 
                     onClick={() => setIsCmdOpen(true)}
                     className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded border border-zinc-800 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 transition-all"
@@ -281,12 +309,14 @@ const App: React.FC = () => {
                      <span className="ml-2 bg-zinc-800 px-1 rounded text-[10px]">⌘K</span>
                  </button>
 
-                 <div className="relative">
-                     <Bell size={16} className="text-zinc-500 hover:text-zinc-300 cursor-pointer transition-colors" />
-                     {notifications.some(n => !n.read) && (
-                         <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-                     )}
-                 </div>
+                <div className="relative">
+                    <Bell size={16} className="text-zinc-500 hover:text-zinc-300 cursor-pointer transition-colors" />
+                    {unreadCount > 0 && (
+                        <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 bg-red-500 text-[10px] font-bold text-white rounded-full flex items-center justify-center">
+                            {unreadCount}
+                        </span>
+                    )}
+                </div>
              </div>
         </header>
 
