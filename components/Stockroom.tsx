@@ -1,14 +1,16 @@
 
 import React, { useMemo, useState } from 'react';
-import { InventoryItem } from '../types';
-import { Package, Plus, Trash2, AlertTriangle, Search, Filter, ArrowUpDown, Clock3 } from 'lucide-react';
+import { InventoryItem, ReferenceDoc } from '../types';
+import { Package, Plus, Trash2, AlertTriangle, Search, Filter, ArrowUpDown, Clock3, Paperclip, FileText, X } from 'lucide-react';
 
 interface StockroomProps {
     items: InventoryItem[];
     onUpdate: (items: InventoryItem[]) => void;
+    docs: ReferenceDoc[];
+    onDocsUpdate: (docs: ReferenceDoc[]) => void;
 }
 
-const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate }) => {
+const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate, docs, onDocsUpdate }) => {
     const [search, setSearch] = useState('');
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
     const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -16,6 +18,7 @@ const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate }) => {
     const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'healthy' | 'caution' | 'critical'>('all');
     const [minStockLevel, setMinStockLevel] = useState(0);
     const [quickFilters, setQuickFilters] = useState({ lowStock: false, recent: false });
+    const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
     const addItem = () => {
         const newItem: InventoryItem = {
@@ -48,10 +51,31 @@ const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate }) => {
 
     const maxQuantity = useMemo(() => Math.max(100, ...items.map(i => i.quantity)), [items]);
 
+    const selectedItem = useMemo(() => items.find(i => i.id === selectedItemId) || null, [items, selectedItemId]);
+    const relatedDocs = useMemo(
+        () => selectedItem ? docs.filter(doc => doc.relatedInventoryIds?.includes(selectedItem.id)) : [],
+        [docs, selectedItem]
+    );
+
     const stockStatus = (item: InventoryItem) => {
         if (item.quantity <= item.minLevel) return 'critical' as const;
         if (item.quantity <= item.minLevel * 1.5) return 'caution' as const;
         return 'healthy' as const;
+    };
+
+    const toggleDocLink = (docId: string) => {
+        if (!selectedItem) return;
+        onDocsUpdate(docs.map(doc => {
+            if (doc.id !== docId) return doc;
+            const existing = doc.relatedInventoryIds || [];
+            const alreadyLinked = existing.includes(selectedItem.id);
+            return {
+                ...doc,
+                relatedInventoryIds: alreadyLinked
+                    ? existing.filter(id => id !== selectedItem.id)
+                    : [...existing, selectedItem.id]
+            };
+        }));
     };
 
     const filtered = items.filter(i => {
@@ -83,7 +107,7 @@ const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate }) => {
     };
 
     return (
-        <div className="p-8 h-full flex flex-col bg-zinc-50">
+        <div className={`p-8 h-full flex flex-col bg-zinc-50 relative ${selectedItem ? 'pr-[420px]' : ''}`}>
             <header className="flex justify-between items-end mb-6">
                 <div>
                     <h2 className="font-serif text-2xl font-bold text-zinc-900 flex items-center gap-2">
@@ -221,7 +245,8 @@ const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate }) => {
                     <table className="w-full text-sm text-left">
                         <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[10px] tracking-wider sticky top-0 border-b border-zinc-200">
                             <tr>
-                                <th className="px-6 py-3 w-[35%]">Item Name / SKU</th>
+                                <th className="px-6 py-3 w-[30%]">Item Name / SKU</th>
+                                <th className="px-6 py-3 w-[15%]">Docs</th>
                                 <th className="px-6 py-3 w-[20%]">Category</th>
                                 <th className="px-6 py-3 w-[20%]">Location</th>
                                 <th className="px-6 py-3 w-[20%]">Stock</th>
@@ -258,8 +283,18 @@ const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate }) => {
                                         </div>
                                     </td>
                                     <td className="px-6 py-3">
+                                        <button
+                                            onClick={() => setSelectedItemId(item.id)}
+                                            className={`px-3 py-2 rounded text-xs font-bold flex items-center gap-2 border transition-colors ${selectedItemId === item.id ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300'}`}
+                                        >
+                                            <Paperclip size={14} />
+                                            Docs
+                                        </button>
+                                        <p className="text-[10px] text-zinc-400 mt-1">{docs.filter(d => d.relatedInventoryIds?.includes(item.id)).length} linked</p>
+                                    </td>
+                                    <td className="px-6 py-3">
                                         <div className={`inline-block px-2 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wide ${categoryColor(item.category)}`}>
-                                            <input 
+                                            <input
                                                 value={item.category}
                                                 onChange={e => updateItem(item.id, 'category', e.target.value)}
                                                 className="bg-transparent border-none w-24 text-center focus:outline-none"
@@ -312,6 +347,68 @@ const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate }) => {
                     </table>
                 </div>
             </div>
+
+            {selectedItem && (
+                <div className="absolute right-4 top-4 bottom-4 w-96 bg-white border border-zinc-200 rounded-xl shadow-lg p-5 flex flex-col z-20">
+                    <div className="flex items-start justify-between mb-3">
+                        <div>
+                            <p className="text-[11px] uppercase tracking-wide text-zinc-400 font-bold">Inventory Detail</p>
+                            <h3 className="font-serif text-xl font-bold text-zinc-900">{selectedItem.name}</h3>
+                            <p className="text-xs text-zinc-500">{selectedItem.category} • {selectedItem.location}</p>
+                        </div>
+                        <button onClick={() => setSelectedItemId(null)} className="text-zinc-400 hover:text-zinc-600"><X size={16}/></button>
+                    </div>
+                    <div className="bg-zinc-50 border border-zinc-100 rounded-lg p-3 mb-3 text-sm text-zinc-600">
+                        <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold">On Hand</span>
+                            <span className="font-mono">{selectedItem.quantity} {selectedItem.unit}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-zinc-500">
+                            <span>Min level</span>
+                            <span>{selectedItem.minLevel}</span>
+                        </div>
+                    </div>
+                    <div className="mb-3">
+                        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-zinc-500 font-bold mb-2">
+                            <Paperclip size={14}/> Related documents
+                        </div>
+                        <div className="space-y-2">
+                            {relatedDocs.length === 0 && <p className="text-sm text-zinc-500">No documents linked yet.</p>}
+                            {relatedDocs.map(doc => (
+                                <div key={doc.id} className="border border-zinc-200 rounded-lg p-2 text-sm flex items-start gap-2">
+                                    <FileText size={16} className="text-zinc-400" />
+                                    <div className="flex-1">
+                                        <p className="font-bold text-zinc-800 leading-tight">{doc.title}</p>
+                                        <p className="text-[11px] text-zinc-500">{doc.folder || 'Unfiled'} • {doc.tags.join(', ') || 'No tags'}</p>
+                                        {doc.url && <a className="text-xs text-blue-600 hover:underline" href={doc.url} target="_blank" rel="noreferrer">Open</a>}
+                                    </div>
+                                    <button onClick={() => toggleDocLink(doc.id)} className="text-[10px] text-zinc-400 hover:text-red-500">Unlink</button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="mt-auto">
+                        <p className="text-[11px] uppercase tracking-wide text-zinc-500 font-bold mb-2">Attach more</p>
+                        <div className="h-40 overflow-auto rounded border border-dashed border-zinc-200 p-2 space-y-2 bg-zinc-50/50">
+                            {docs.map(doc => (
+                                <label key={doc.id} className="flex items-start gap-2 text-sm text-zinc-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={Boolean(doc.relatedInventoryIds?.includes(selectedItem.id))}
+                                        onChange={() => toggleDocLink(doc.id)}
+                                        className="mt-1"
+                                    />
+                                    <div>
+                                        <p className="font-bold leading-tight">{doc.title}</p>
+                                        <p className="text-[11px] text-zinc-500">{doc.folder || 'Unfiled'} • {doc.tags.join(', ') || 'No tags'}</p>
+                                    </div>
+                                </label>
+                            ))}
+                            {docs.length === 0 && <p className="text-xs text-zinc-400">Library empty.</p>}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

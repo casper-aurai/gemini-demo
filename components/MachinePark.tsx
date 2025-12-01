@@ -1,11 +1,13 @@
 
-import React from 'react';
-import { Machine, MachineStatus } from '../types';
-import { Wrench, Settings, AlertCircle, CheckCircle2, Plus, Calendar, Activity, XCircle, PauseCircle, Archive } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Machine, MachineStatus, ReferenceDoc } from '../types';
+import { Wrench, Settings, AlertCircle, CheckCircle2, Plus, Calendar, XCircle, Archive, Paperclip, FileText, X } from 'lucide-react';
 
 interface MachineParkProps {
     machines: Machine[];
     onUpdate: (machines: Machine[]) => void;
+    docs: ReferenceDoc[];
+    onDocsUpdate: (docs: ReferenceDoc[]) => void;
 }
 
 const statusConfig: Record<MachineStatus, { color: string, icon: any, label: string }> = {
@@ -16,7 +18,14 @@ const statusConfig: Record<MachineStatus, { color: string, icon: any, label: str
     retired: { color: 'bg-zinc-100 text-zinc-500 border-zinc-200', icon: Archive, label: 'Retired' }
 };
 
-const MachinePark: React.FC<MachineParkProps> = ({ machines, onUpdate }) => {
+const MachinePark: React.FC<MachineParkProps> = ({ machines, onUpdate, docs, onDocsUpdate }) => {
+    const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null);
+
+    const selectedMachine = useMemo(() => machines.find(m => m.id === selectedMachineId) || null, [machines, selectedMachineId]);
+    const relatedDocs = useMemo(
+        () => selectedMachine ? docs.filter(doc => doc.relatedMachineIds?.includes(selectedMachine.id)) : [],
+        [docs, selectedMachine]
+    );
     
     const addMachine = () => {
         const newMachine: Machine = {
@@ -48,8 +57,23 @@ const MachinePark: React.FC<MachineParkProps> = ({ machines, onUpdate }) => {
         }
     };
 
+    const toggleDocLink = (docId: string) => {
+        if (!selectedMachine) return;
+        onDocsUpdate(docs.map(doc => {
+            if (doc.id !== docId) return doc;
+            const existing = doc.relatedMachineIds || [];
+            const linked = existing.includes(selectedMachine.id);
+            return {
+                ...doc,
+                relatedMachineIds: linked
+                    ? existing.filter(id => id !== selectedMachine.id)
+                    : [...existing, selectedMachine.id]
+            };
+        }));
+    };
+
     return (
-        <div className="p-8 h-full bg-zinc-50 overflow-y-auto">
+        <div className={`p-8 h-full bg-zinc-50 overflow-y-auto relative ${selectedMachine ? 'pr-[420px]' : ''}`}>
             <header className="flex justify-between items-center mb-8">
                 <div>
                     <h2 className="font-serif text-2xl font-bold text-zinc-900 flex items-center gap-2">
@@ -71,7 +95,7 @@ const MachinePark: React.FC<MachineParkProps> = ({ machines, onUpdate }) => {
                     <div key={machine.id} className="bg-white rounded-xl border border-zinc-200 shadow-sm p-5 group flex flex-col h-full hover:shadow-md transition-shadow">
                         <div className="flex justify-between items-start mb-4">
                             <div className="flex-1">
-                                <input 
+                                <input
                                     value={machine.name}
                                     onChange={(e) => updateMachine(machine.id, { name: e.target.value })}
                                     className="font-bold text-lg text-zinc-900 bg-transparent focus:bg-zinc-50 rounded px-1 -ml-1 w-full truncate"
@@ -82,12 +106,18 @@ const MachinePark: React.FC<MachineParkProps> = ({ machines, onUpdate }) => {
                                     className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest bg-transparent focus:bg-zinc-50 rounded px-1 -ml-1 w-full"
                                 />
                             </div>
-                            <button 
+                            <button
                                 onClick={() => cycleStatus(machine.id, machine.status)}
                                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border transition-all hover:opacity-80 ${statusConfig[machine.status].color}`}
                             >
                                 <StatusIcon size={12} />
                                 {statusConfig[machine.status].label}
+                            </button>
+                            <button
+                                onClick={() => setSelectedMachineId(machine.id)}
+                                className={`ml-2 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border flex items-center gap-1 ${selectedMachineId === machine.id ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300'}`}
+                            >
+                                <Paperclip size={12}/> Docs
                             </button>
                         </div>
 
@@ -130,6 +160,68 @@ const MachinePark: React.FC<MachineParkProps> = ({ machines, onUpdate }) => {
                     </div>
                 )})}
             </div>
+
+            {selectedMachine && (
+                <div className="absolute right-4 top-4 bottom-4 w-96 bg-white border border-zinc-200 rounded-xl shadow-lg p-5 flex flex-col z-20">
+                    <div className="flex items-start justify-between mb-3">
+                        <div>
+                            <p className="text-[11px] uppercase tracking-wide text-zinc-400 font-bold">Machine Detail</p>
+                            <h3 className="font-serif text-xl font-bold text-zinc-900">{selectedMachine.name}</h3>
+                            <p className="text-xs text-zinc-500">{selectedMachine.type}</p>
+                        </div>
+                        <button onClick={() => setSelectedMachineId(null)} className="text-zinc-400 hover:text-zinc-600"><X size={16}/></button>
+                    </div>
+                    <div className="bg-zinc-50 border border-zinc-100 rounded-lg p-3 mb-3 text-sm text-zinc-600">
+                        <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold">Status</span>
+                            <span className="text-xs px-2 py-1 rounded-full border bg-white">{statusConfig[selectedMachine.status].label}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-zinc-500">
+                            <span>Next Service</span>
+                            <span>{new Date(selectedMachine.nextService).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                    <div className="mb-3">
+                        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-zinc-500 font-bold mb-2">
+                            <Paperclip size={14}/> Related documents
+                        </div>
+                        <div className="space-y-2">
+                            {relatedDocs.length === 0 && <p className="text-sm text-zinc-500">No documents linked yet.</p>}
+                            {relatedDocs.map(doc => (
+                                <div key={doc.id} className="border border-zinc-200 rounded-lg p-2 text-sm flex items-start gap-2">
+                                    <FileText size={16} className="text-zinc-400" />
+                                    <div className="flex-1">
+                                        <p className="font-bold text-zinc-800 leading-tight">{doc.title}</p>
+                                        <p className="text-[11px] text-zinc-500">{doc.folder || 'Unfiled'} • {doc.tags.join(', ') || 'No tags'}</p>
+                                        {doc.url && <a className="text-xs text-blue-600 hover:underline" href={doc.url} target="_blank" rel="noreferrer">Open</a>}
+                                    </div>
+                                    <button onClick={() => toggleDocLink(doc.id)} className="text-[10px] text-zinc-400 hover:text-red-500">Unlink</button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="mt-auto">
+                        <p className="text-[11px] uppercase tracking-wide text-zinc-500 font-bold mb-2">Attach more</p>
+                        <div className="h-40 overflow-auto rounded border border-dashed border-zinc-200 p-2 space-y-2 bg-zinc-50/50">
+                            {docs.map(doc => (
+                                <label key={doc.id} className="flex items-start gap-2 text-sm text-zinc-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={Boolean(doc.relatedMachineIds?.includes(selectedMachine.id))}
+                                        onChange={() => toggleDocLink(doc.id)}
+                                        className="mt-1"
+                                    />
+                                    <div>
+                                        <p className="font-bold leading-tight">{doc.title}</p>
+                                        <p className="text-[11px] text-zinc-500">{doc.folder || 'Unfiled'} • {doc.tags.join(', ') || 'No tags'}</p>
+                                    </div>
+                                </label>
+                            ))}
+                            {docs.length === 0 && <p className="text-xs text-zinc-400">Library empty.</p>}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

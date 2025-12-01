@@ -92,12 +92,20 @@ export interface Vendor {
     notes?: string;
 }
 
+export type LibraryDocType = 'pdf' | 'image' | 'link' | 'note';
+
 export interface ReferenceDoc {
     id: string;
     title: string;
-    type: 'datasheet' | 'manual' | 'standard' | 'receipt';
+    type: LibraryDocType;
+    description?: string;
+    folder?: string;
     url?: string; // external link
+    fileName?: string;
+    previewData?: string; // data url for inline preview
     tags: string[];
+    relatedInventoryIds?: string[];
+    relatedMachineIds?: string[];
     dateAdded: number;
 }
 
