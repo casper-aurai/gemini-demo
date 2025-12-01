@@ -9,6 +9,7 @@ import ReferenceLibrary from './components/ReferenceLibrary';
 import SupplyChain from './components/SupplyChain';
 import Analytics from './components/Analytics';
 import SystemCore from './components/SystemCore';
+import ResponsiveLayout from './components/ResponsiveLayout';
 import { CloudSyncProvider, EncryptedLocalStorageProvider, SystemSnapshot } from './services/dataProvider';
 
 import {
@@ -264,16 +265,6 @@ const App: React.FC = () => {
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const NavItem = ({ view, icon: Icon, label }: { view: ViewMode, icon: any, label: string }) => (
-      <button 
-        onClick={() => setCurrentView(view)}
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all mb-1 ${currentView === view ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}
-      >
-        <Icon size={16} />
-        <span className="font-medium text-sm">{label}</span>
-      </button>
-  );
-
   const Breadcrumbs = () => {
       if(selectedProject) return (
           <div className="flex items-center text-xs font-mono text-zinc-500 gap-2">
@@ -302,6 +293,33 @@ const App: React.FC = () => {
       );
   };
 
+  const navGroups = [
+      {
+          title: 'Resources',
+          items: [
+              { label: 'Active Projects', icon: LayoutDashboard, active: currentView === 'dashboard', onClick: () => setCurrentView('dashboard') },
+              { label: 'Stockroom', icon: Package, active: currentView === 'stockroom', onClick: () => setCurrentView('stockroom') },
+              { label: 'Machine Park', icon: Settings, active: currentView === 'machines', onClick: () => setCurrentView('machines') },
+              { label: 'Supply Chain', icon: Truck, active: currentView === 'supply', onClick: () => setCurrentView('supply') },
+              { label: 'Library', icon: Book, active: currentView === 'library', onClick: () => setCurrentView('library') },
+          ],
+      },
+      {
+          title: 'Operations',
+          items: [
+              { label: 'Analytics', icon: BarChart3, active: currentView === 'analytics', onClick: () => setCurrentView('analytics') },
+              { label: 'System Core', icon: Database, active: currentView === 'system', onClick: () => setCurrentView('system') },
+          ],
+      },
+      {
+          title: 'Shortcuts',
+          items: [
+              { label: 'Initialize Project', icon: Plus, onClick: () => { const t = prompt('Project Designation:'); if(t) addProject(t); } },
+              { label: 'Command Palette', icon: Command, onClick: () => setIsCmdOpen(true) },
+          ],
+      },
+  ];
+
   // If detailed view
   if (selectedProject) {
       return (
@@ -314,86 +332,27 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-200 font-sans">
-      
-      {/* Sidebar */}
-      <aside className="w-64 bg-zinc-950 text-zinc-400 flex flex-col flex-shrink-0 border-r border-zinc-900">
-        <div className="p-6">
-          <h1 className="font-serif text-2xl text-zinc-100 font-bold tracking-tight">Construct OS</h1>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">System V2.0</p>
-          </div>
-        </div>
-
-        <nav className="flex-1 px-4 space-y-6 overflow-y-auto">
-            <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Registry</div>
-                <NavItem view="dashboard" icon={LayoutDashboard} label="Active Projects" />
+    <ResponsiveLayout
+        navGroups={navGroups}
+        breadcrumbs={<Breadcrumbs />}
+        onOpenCommand={() => setIsCmdOpen(true)}
+        headerActions={(
+            <div className="relative">
+                <Bell size={16} className="text-zinc-500 hover:text-zinc-300 cursor-pointer transition-colors" />
+                {unreadCount > 0 && (
+                    <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 bg-red-500 text-[10px] font-bold text-white rounded-full flex items-center justify-center">
+                        {unreadCount}
+                    </span>
+                )}
             </div>
-            
-            <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Resources</div>
-                <NavItem view="stockroom" icon={Package} label="Stockroom" />
-                <NavItem view="machines" icon={Settings} label="Machine Park" />
-                <NavItem view="supply" icon={Truck} label="Supply Chain" />
-                <NavItem view="library" icon={Book} label="Library" />
-            </div>
-            
-            <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Operations</div>
-                <NavItem view="analytics" icon={BarChart3} label="Analytics" />
-                <NavItem view="system" icon={Database} label="System Core" />
-            </div>
-        </nav>
-        
-        {/* User Profile / Quick Settings */}
-        <div className="p-4 border-t border-zinc-900">
-            <button className="flex items-center gap-3 w-full p-2 hover:bg-zinc-900 rounded-md transition-colors">
-                <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-xs border border-zinc-700">JS</div>
-                <div className="text-left">
-                    <div className="text-xs font-bold text-zinc-300">Jane Smith</div>
-                    <div className="text-[10px] text-zinc-600">Lead Engineer</div>
-                </div>
-            </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden h-screen bg-zinc-950 relative">
-        
-        {/* Header */}
-        <header className="h-14 border-b border-zinc-900 bg-zinc-950 flex items-center justify-between px-6 flex-shrink-0">
-             <Breadcrumbs />
-             
-                 <div className="flex items-center gap-4">
-                 <button 
-                    onClick={() => setIsCmdOpen(true)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded border border-zinc-800 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 transition-all"
-                 >
-                     <Command size={12} />
-                     <span>Search...</span>
-                     <span className="ml-2 bg-zinc-800 px-1 rounded text-[10px]">⌘K</span>
-                 </button>
-
-                <div className="relative">
-                    <Bell size={16} className="text-zinc-500 hover:text-zinc-300 cursor-pointer transition-colors" />
-                    {unreadCount > 0 && (
-                        <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 bg-red-500 text-[10px] font-bold text-white rounded-full flex items-center justify-center">
-                            {unreadCount}
-                        </span>
-                    )}
-                </div>
-             </div>
-        </header>
-
-        {/* Global Command Palette Modal */}
+        )}
+    >
         {isCmdOpen && (
             <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-32 animate-in fade-in duration-200">
                 <div className="bg-zinc-900 w-[600px] rounded-xl border border-zinc-700 shadow-2xl overflow-hidden flex flex-col">
                     <div className="p-4 border-b border-zinc-800 flex items-center gap-3">
                         <Search className="text-zinc-400" size={20} />
-                        <input 
+                        <input
                             ref={cmdInputRef}
                             value={cmdQuery}
                             onChange={(e) => setCmdQuery(e.target.value)}
@@ -407,14 +366,14 @@ const App: React.FC = () => {
                             <div className="text-center py-8 text-zinc-500 text-sm">No results found.</div>
                         ) : (
                             commandResults().map((res, i) => (
-                                <button 
-                                    key={i} 
+                                <button
+                                    key={i}
                                     onClick={res.action}
                                     className="w-full text-left p-3 hover:bg-zinc-800 rounded-lg flex items-center justify-between group"
                                 >
                                     <div className="flex items-center gap-3">
                                         <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
-                                            res.type === 'Project' ? 'bg-blue-900/30 text-blue-400' : 
+                                            res.type === 'Project' ? 'bg-blue-900/30 text-blue-400' :
                                             res.type === 'Stock' ? 'bg-green-900/30 text-green-400' :
                                             res.type === 'Machine' ? 'bg-amber-900/30 text-amber-400' :
                                             'bg-zinc-800 text-zinc-400'
@@ -431,75 +390,70 @@ const App: React.FC = () => {
             </div>
         )}
 
-        {/* Content Views */}
-        <div className="flex-1 overflow-hidden relative">
-            {currentView === 'dashboard' && (
-                <div className="flex-1 h-full overflow-y-auto p-8 bg-zinc-950">
-                     <div className="flex justify-between items-end mb-8">
-                        <div>
-                            <h2 className="text-2xl font-serif font-bold text-zinc-100">Project Registry</h2>
-                            <p className="text-zinc-500 text-sm mt-1">Active pipelines and engineering status.</p>
+        {currentView === 'dashboard' && (
+            <div className="flex-1 h-full overflow-y-auto p-8 bg-zinc-950">
+                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between mb-8">
+                    <div>
+                        <h2 className="text-2xl font-serif font-bold text-zinc-100">Project Registry</h2>
+                        <p className="text-zinc-500 text-sm mt-1">Active pipelines and engineering status.</p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                         <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" size={14} />
+                            <input
+                                type="text"
+                                placeholder="Filter projects..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-9 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-600 w-full sm:w-64 text-zinc-200"
+                            />
                         </div>
-                        <div className="flex gap-4">
-                             <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" size={14} />
-                                <input 
-                                    type="text" 
-                                    placeholder="Filter projects..." 
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="pl-9 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-600 w-64 text-zinc-200"
+                        <button
+                            onClick={() => { const t = prompt("Project Designation:"); if(t) addProject(t); }}
+                            className="bg-zinc-100 text-zinc-900 px-4 py-2 rounded-md text-xs font-bold hover:bg-white flex items-center gap-2 uppercase tracking-wide transition-colors"
+                        >
+                            <Plus size={14} /> Initialize Project
+                        </button>
+                    </div>
+                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {filteredProjects.length === 0 ? (
+                        <div className="col-span-full flex flex-col items-center justify-center text-zinc-700 py-20 border border-dashed border-zinc-800 rounded-xl">
+                            <Box size={48} className="mb-4 opacity-20" />
+                            <p className="font-mono text-sm">REGISTRY EMPTY</p>
+                        </div>
+                    ) : (
+                        filteredProjects.map(project => (
+                            <div key={project.id} onClick={() => setSelectedProjectId(project.id)} className="cursor-pointer h-full">
+                                <ProjectCard
+                                    project={project}
+                                    onStatusChange={(id, status) => setProjects(p => p.map(pr => pr.id === id ? { ...pr, status } : pr))}
+                                    onDelete={deleteProject}
                                 />
                             </div>
-                            <button 
-                                onClick={() => { const t = prompt("Project Designation:"); if(t) addProject(t); }}
-                                className="bg-zinc-100 text-zinc-900 px-4 py-2 rounded-md text-xs font-bold hover:bg-white flex items-center gap-2 uppercase tracking-wide transition-colors"
-                            >
-                                <Plus size={14} /> Initialize Project
-                            </button>
-                        </div>
-                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {filteredProjects.length === 0 ? (
-                            <div className="col-span-full flex flex-col items-center justify-center text-zinc-700 py-20 border border-dashed border-zinc-800 rounded-xl">
-                                <Box size={48} className="mb-4 opacity-20" />
-                                <p className="font-mono text-sm">REGISTRY EMPTY</p>
-                            </div>
-                        ) : (
-                            filteredProjects.map(project => (
-                                <div key={project.id} onClick={() => setSelectedProjectId(project.id)} className="cursor-pointer h-full">
-                                    <ProjectCard 
-                                        project={project} 
-                                        onStatusChange={(id, status) => setProjects(p => p.map(pr => pr.id === id ? { ...pr, status } : pr))}
-                                        onDelete={deleteProject}
-                                    />
-                                </div>
-                            ))
-                        )}
-                    </div>
+                        ))
+                    )}
                 </div>
-            )}
+            </div>
+        )}
 
-            {currentView === 'stockroom' && <Stockroom items={inventory} onUpdate={setInventory} />}
-            {currentView === 'machines' && <MachinePark machines={machines} onUpdate={setMachines} />}
-            {currentView === 'supply' && <SupplyChain vendors={vendors} onUpdate={setVendors} />}
-            {currentView === 'library' && <ReferenceLibrary docs={docs} onUpdate={setDocs} />}
-            {currentView === 'analytics' && <Analytics projects={projects} inventory={inventory} machines={machines} />}
-            {currentView === 'system' && (
-                <SystemCore
-                    exportData={exportSystem}
-                    importData={importSystem}
-                    securitySettings={securitySettings}
-                    onUpdateSecurity={updateSecuritySettings}
-                    onSync={manualCloudSync}
-                    syncStatus={syncStatus}
-                />
-            )}
-        </div>
-
-      </main>
-    </div>
+        {currentView === 'stockroom' && <Stockroom items={inventory} onUpdate={setInventory} />}
+        {currentView === 'machines' && <MachinePark machines={machines} onUpdate={setMachines} />}
+        {currentView === 'supply' && <SupplyChain vendors={vendors} onUpdate={setVendors} />}
+        {currentView === 'library' && <ReferenceLibrary docs={docs} onUpdate={setDocs} />}
+        {currentView === 'analytics' && <Analytics projects={projects} inventory={inventory} machines={machines} />}
+        {currentView === 'system' && (
+            <SystemCore
+                exportData={exportSystem}
+                importData={importSystem}
+                securitySettings={securitySettings}
+                onUpdateSecurity={updateSecuritySettings}
+                onSync={manualCloudSync}
+                syncStatus={syncStatus}
+            />
+        )}
+    </ResponsiveLayout>
   );
 };
 
