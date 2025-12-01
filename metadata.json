@@ -1,0 +1,8 @@
+{
+  "name": "Construct OS",
+  "description": "Advanced project management and engineering analysis for veteran constructors. Multimodal sketch analysis and BOM generation.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
