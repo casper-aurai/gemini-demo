@@ -10,10 +10,12 @@ import SupplyChain from './components/SupplyChain';
 import Analytics from './components/Analytics';
 import SystemCore from './components/SystemCore';
 import { CloudSyncProvider, EncryptedLocalStorageProvider, SystemSnapshot } from './services/dataProvider';
+import { notificationService } from './services/notifications';
+import NotificationBell from './components/NotificationBell';
 
 import {
     LayoutDashboard, Plus, Search, Box, Package, Settings,
-    Book, Truck, BarChart3, Database, Bell, ChevronRight, Command
+    Book, Truck, BarChart3, Database, ChevronRight, Command
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -28,6 +30,11 @@ const App: React.FC = () => {
   const [docs, setDocs] = useState<ReferenceDoc[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = notificationService.subscribe(setNotifications);
+    return () => unsubscribe();
+  }, []);
 
   const loadSecuritySettings = (): SecuritySettings => {
     const raw = localStorage.getItem('construct_os_security_settings');
@@ -55,30 +62,6 @@ const App: React.FC = () => {
   const [isCmdOpen, setIsCmdOpen] = useState(false);
   const [cmdQuery, setCmdQuery] = useState('');
   const cmdInputRef = useRef<HTMLInputElement>(null);
-
-  const reconcileInventoryNotifications = (
-    items: InventoryItem[],
-    existingNotifications: Notification[],
-  ): Notification[] => {
-    const nonInventory = existingNotifications.filter(n => !n.id.startsWith('inv-'));
-
-    const inventoryAlerts = items
-      .filter(item => item.quantity <= item.minLevel)
-      .map(item => {
-        const id = `inv-${item.id}`;
-        const previous = existingNotifications.find(n => n.id === id);
-
-        return {
-          id,
-          type: 'alert' as const,
-          message: `Low stock: ${item.name} (${item.quantity} ${item.unit})`,
-          timestamp: previous?.timestamp ?? Date.now(),
-          read: previous?.read ?? false,
-        };
-      });
-
-    return [...nonInventory, ...inventoryAlerts];
-  };
 
   // --- PERSISTENCE ---
   const seedSnapshot: SystemSnapshot = {
@@ -157,10 +140,6 @@ const App: React.FC = () => {
         setMachines(snapshot.machines);
         setVendors(snapshot.vendors);
         setDocs(snapshot.docs);
-        setNotifications([
-            { id: '1', type: 'alert', message: 'Kärcher WD 6 P maintenance overdue', timestamp: Date.now(), read: false },
-            { id: '2', type: 'info', message: 'Low stock: 6061 Aluminum', timestamp: Date.now() - 100000, read: false }
-        ]);
         setInitialized(true);
     };
 
@@ -171,11 +150,15 @@ const App: React.FC = () => {
   useEffect(() => localStorage.setItem('construct_os_projects', JSON.stringify(projects)), [projects]);
   useEffect(() => {
     localStorage.setItem('construct_os_inventory', JSON.stringify(inventory));
-    setNotifications(prev => reconcileInventoryNotifications(inventory, prev));
   }, [inventory]);
   useEffect(() => localStorage.setItem('construct_os_machines', JSON.stringify(machines)), [machines]);
   useEffect(() => localStorage.setItem('construct_os_vendors', JSON.stringify(vendors)), [vendors]);
   useEffect(() => localStorage.setItem('construct_os_docs', JSON.stringify(docs)), [docs]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    notificationService.recompute({ inventory, machines, vendors });
+  }, [inventory, machines, vendors, initialized]);
 
   // --- GLOBAL KEYBOARD SHORTCUTS ---
   useEffect(() => {
@@ -225,6 +208,13 @@ const App: React.FC = () => {
       if(data.docs) setDocs(data.docs);
   };
 
+  const markNotificationRead = (id: string) => notificationService.markRead(id);
+  const markAllNotificationsRead = () => notificationService.markAllRead();
+  const handleNotificationNavigate = (link: { view: ViewMode; id?: string }) => {
+    setCurrentView(link.view);
+    setSelectedProjectId(null);
+  };
+
   const updateSecuritySettings = (partial: Partial<SecuritySettings>) => {
       setSecuritySettings(prev => ({ ...prev, ...partial }));
   };
@@ -262,10 +252,9 @@ const App: React.FC = () => {
   // --- RENDER HELPERS ---
   const filteredProjects = projects.filter(p => p.title.toLowerCase().includes(searchTerm.toLowerCase()));
   const selectedProject = projects.find(p => p.id === selectedProjectId);
-  const unreadCount = notifications.filter(n => !n.read).length;
 
   const NavItem = ({ view, icon: Icon, label }: { view: ViewMode, icon: any, label: string }) => (
-      <button 
+      <button
         onClick={() => setCurrentView(view)}
         className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all mb-1 ${currentView === view ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}
       >
@@ -366,24 +355,21 @@ const App: React.FC = () => {
         <header className="h-14 border-b border-zinc-900 bg-zinc-950 flex items-center justify-between px-6 flex-shrink-0">
              <Breadcrumbs />
              
-                 <div className="flex items-center gap-4">
-                 <button 
-                    onClick={() => setIsCmdOpen(true)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded border border-zinc-800 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 transition-all"
-                 >
-                     <Command size={12} />
-                     <span>Search...</span>
-                     <span className="ml-2 bg-zinc-800 px-1 rounded text-[10px]">⌘K</span>
-                 </button>
-
-                <div className="relative">
-                    <Bell size={16} className="text-zinc-500 hover:text-zinc-300 cursor-pointer transition-colors" />
-                    {unreadCount > 0 && (
-                        <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 bg-red-500 text-[10px] font-bold text-white rounded-full flex items-center justify-center">
-                            {unreadCount}
-                        </span>
-                    )}
-                </div>
+                <div className="flex items-center gap-4">
+                <button
+                   onClick={() => setIsCmdOpen(true)}
+                   className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded border border-zinc-800 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 transition-all"
+                >
+                    <Command size={12} />
+                    <span>Search...</span>
+                    <span className="ml-2 bg-zinc-800 px-1 rounded text-[10px]">⌘K</span>
+                </button>
+                <NotificationBell
+                  notifications={notifications}
+                  onMarkRead={markNotificationRead}
+                  onMarkAllRead={markAllNotificationsRead}
+                  onNavigate={handleNotificationNavigate}
+                />
              </div>
         </header>
 
