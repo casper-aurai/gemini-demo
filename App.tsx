@@ -9,6 +9,8 @@ import ReferenceLibrary from './components/ReferenceLibrary';
 import SupplyChain from './components/SupplyChain';
 import Analytics from './components/Analytics';
 import SystemCore from './components/SystemCore';
+import CommandPalette from './components/CommandPalette';
+import SearchService, { SearchEntry } from './services/searchService';
 import { CloudSyncProvider, EncryptedLocalStorageProvider, SystemSnapshot } from './services/dataProvider';
 
 import {
@@ -54,7 +56,8 @@ const App: React.FC = () => {
   // Command Palette State
   const [isCmdOpen, setIsCmdOpen] = useState(false);
   const [cmdQuery, setCmdQuery] = useState('');
-  const cmdInputRef = useRef<HTMLInputElement>(null);
+  const [stockroomPresetSearch, setStockroomPresetSearch] = useState<string | null>(null);
+  const searchIndexRef = useRef(new SearchService());
 
   const reconcileInventoryNotifications = (
     items: InventoryItem[],
@@ -190,18 +193,12 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  useEffect(() => {
-      if(isCmdOpen && cmdInputRef.current) {
-          cmdInputRef.current.focus();
-      }
-  }, [isCmdOpen]);
-
   // --- ACTIONS ---
-  const addProject = (title: string) => {
+  const addProject = useCallback((title: string) => {
     const newProject: Project = { id: Date.now().toString(), title, description: "Initialize definition...", status: 'concept', createdAt: Date.now(), bom: [], tasks: [], chatHistory: [] };
     setProjects(prev => [newProject, ...prev]);
     setSelectedProjectId(newProject.id);
-  };
+  }, []);
 
   const updateProject = (p: Project) => setProjects(prev => prev.map(old => old.id === p.id ? p : old));
   const deleteProject = (id: string) => { if(confirm("Delete Project?")) setProjects(prev => prev.filter(p => p.id !== id)); };
@@ -234,30 +231,152 @@ const App: React.FC = () => {
       await persistSnapshot(snapshotFromState());
   };
 
-  // --- COMMAND PALETTE SEARCH LOGIC ---
-  const commandResults = () => {
-      if(!cmdQuery) return [];
-      const q = cmdQuery.toLowerCase();
-      const results: {type: string, label: string, desc: string, action: () => void}[] = [];
+  const clearStockroomPreset = useCallback(() => setStockroomPresetSearch(null), []);
 
-      // Projects
-      projects.filter(p => p.title.toLowerCase().includes(q)).forEach(p => {
-          results.push({ type: 'Project', label: p.title, desc: p.status, action: () => { setSelectedProjectId(p.id); setIsCmdOpen(false); }});
+  useEffect(() => {
+    const entries: SearchEntry[] = [];
+
+    projects.forEach((p) => {
+      entries.push({
+        id: `project-${p.id}`,
+        type: 'project',
+        title: p.title,
+        subtitle: p.status,
+        keywords: [p.description || '', ...(p.tasks?.map((t) => t.text) || [])],
+        action: () => {
+          setSelectedProjectId(p.id);
+          setIsCmdOpen(false);
+        },
       });
-      // Inventory
-      inventory.filter(i => i.name.toLowerCase().includes(q)).forEach(i => {
-          results.push({ type: 'Stock', label: i.name, desc: `${i.quantity} ${i.unit}`, action: () => { setCurrentView('stockroom'); setIsCmdOpen(false); }});
+    });
+
+    inventory.forEach((item) => {
+      entries.push({
+        id: `inventory-${item.id}`,
+        type: 'inventory',
+        title: item.name,
+        subtitle: `${item.quantity} ${item.unit} • ${item.location}`,
+        keywords: [item.category, 'inventory', item.location],
+        action: () => {
+          setCurrentView('stockroom');
+          setStockroomPresetSearch(item.name);
+        },
       });
-      // Machines
-      machines.filter(m => m.name.toLowerCase().includes(q)).forEach(m => {
-          results.push({ type: 'Machine', label: m.name, desc: m.status, action: () => { setCurrentView('machines'); setIsCmdOpen(false); }});
+    });
+
+    machines.forEach((machine) => {
+      entries.push({
+        id: `machine-${machine.id}`,
+        type: 'machine',
+        title: machine.name,
+        subtitle: machine.status,
+        keywords: [machine.type, machine.notes || ''],
+        action: () => {
+          setCurrentView('machines');
+        },
       });
-      // Views
-      if('analytics'.includes(q)) results.push({ type: 'View', label: 'Analytics', desc: 'Dashboard', action: () => { setCurrentView('analytics'); setIsCmdOpen(false); }});
-      if('stockroom'.includes(q)) results.push({ type: 'View', label: 'Stockroom', desc: 'Inventory', action: () => { setCurrentView('stockroom'); setIsCmdOpen(false); }});
-      
-      return results;
-  };
+    });
+
+    vendors.forEach((vendor) => {
+      entries.push({
+        id: `vendor-${vendor.id}`,
+        type: 'vendor',
+        title: vendor.name,
+        subtitle: `${vendor.category} • ${vendor.leadTime || 'Lead time unknown'}`,
+        keywords: [vendor.website, vendor.notes || ''],
+        action: () => setCurrentView('supply'),
+      });
+    });
+
+    docs.forEach((doc) => {
+      entries.push({
+        id: `doc-${doc.id}`,
+        type: 'document',
+        title: doc.title,
+        subtitle: `${doc.type} • ${doc.tags.join(', ')}`,
+        keywords: doc.tags,
+        action: () => setCurrentView('library'),
+      });
+    });
+
+    const actionEntries: SearchEntry[] = [
+      {
+        id: 'action-create-project',
+        type: 'action',
+        title: 'Create new project',
+        subtitle: 'Initialize a pipeline record',
+        keywords: ['new', 'project', 'add'],
+        action: () => {
+          const name = prompt('Project designation:');
+          if (name) addProject(name);
+        },
+      },
+      {
+        id: 'action-create-inventory',
+        type: 'action',
+        title: 'Create inventory item',
+        subtitle: 'Seed a stock entry from the palette',
+        keywords: ['stock', 'inventory', 'add'],
+        action: () => {
+          const name = prompt('Inventory item name:');
+          if (!name) return;
+          const newItem: InventoryItem = {
+            id: Date.now().toString(),
+            name,
+            category: 'General',
+            quantity: 0,
+            unit: 'pcs',
+            location: 'Unassigned',
+            minLevel: 5,
+            cost: 0,
+            lastUpdated: Date.now(),
+          };
+          setInventory((prev) => [newItem, ...prev]);
+          setCurrentView('stockroom');
+        },
+      },
+      {
+        id: 'action-create-vendor',
+        type: 'action',
+        title: 'Register vendor',
+        subtitle: 'Capture a new supply partner',
+        keywords: ['vendor', 'supply', 'add'],
+        action: () => {
+          const name = prompt('Vendor name:');
+          if (!name) return;
+          const newVendor: Vendor = {
+            id: Date.now().toString(),
+            name,
+            website: 'vendor.example.com',
+            category: 'General',
+            rating: 3,
+            leadTime: 'Unknown',
+            notes: '',
+          };
+          setVendors((prev) => [newVendor, ...prev]);
+          setCurrentView('supply');
+        },
+      },
+      {
+        id: 'action-open-analytics',
+        type: 'action',
+        title: 'Open Analytics dashboard',
+        subtitle: 'Navigate to operational reporting',
+        keywords: ['analytics', 'dashboard', 'metrics'],
+        action: () => setCurrentView('analytics'),
+      },
+      {
+        id: 'action-open-system',
+        type: 'action',
+        title: 'Open System Core',
+        subtitle: 'Backup, security, and sync controls',
+        keywords: ['system', 'settings', 'backup'],
+        action: () => setCurrentView('system'),
+      },
+    ];
+
+    searchIndexRef.current.setEntries([...entries, ...actionEntries]);
+  }, [projects, inventory, machines, vendors, docs, addProject]);
 
   // --- RENDER HELPERS ---
   const filteredProjects = projects.filter(p => p.title.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -300,6 +419,42 @@ const App: React.FC = () => {
              <span className="text-zinc-300">{labels[currentView]}</span>
           </div>
       );
+  };
+
+  const trimmedCmdQuery = cmdQuery.trim();
+  const dynamicPaletteActions: SearchEntry[] = [];
+
+  if (trimmedCmdQuery) {
+    dynamicPaletteActions.push({
+      id: `action-filter-projects-${trimmedCmdQuery}`,
+      type: 'action',
+      title: `Filter projects by "${trimmedCmdQuery}"`,
+      subtitle: 'Apply text to project registry filter',
+      keywords: ['filter', 'projects', 'search'],
+      action: () => {
+        setCurrentView('dashboard');
+        setSearchTerm(trimmedCmdQuery);
+      },
+    });
+
+    dynamicPaletteActions.push({
+      id: `action-filter-stock-${trimmedCmdQuery}`,
+      type: 'action',
+      title: `Filter inventory by "${trimmedCmdQuery}"`,
+      subtitle: 'Open stockroom scoped to this query',
+      keywords: ['filter', 'inventory', 'stockroom'],
+      action: () => {
+        setCurrentView('stockroom');
+        setStockroomPresetSearch(trimmedCmdQuery);
+      },
+    });
+  }
+
+  const paletteResults = searchIndexRef.current.search(cmdQuery, dynamicPaletteActions);
+
+  const handleCommandSelect = (res: SearchEntry) => {
+    res.action?.();
+    setIsCmdOpen(false);
   };
 
   // If detailed view
@@ -387,49 +542,14 @@ const App: React.FC = () => {
              </div>
         </header>
 
-        {/* Global Command Palette Modal */}
-        {isCmdOpen && (
-            <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-32 animate-in fade-in duration-200">
-                <div className="bg-zinc-900 w-[600px] rounded-xl border border-zinc-700 shadow-2xl overflow-hidden flex flex-col">
-                    <div className="p-4 border-b border-zinc-800 flex items-center gap-3">
-                        <Search className="text-zinc-400" size={20} />
-                        <input 
-                            ref={cmdInputRef}
-                            value={cmdQuery}
-                            onChange={(e) => setCmdQuery(e.target.value)}
-                            placeholder="Type a command or search..."
-                            className="bg-transparent text-lg text-zinc-100 focus:outline-none flex-1 font-sans"
-                        />
-                        <button onClick={() => setIsCmdOpen(false)} className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">ESC</button>
-                    </div>
-                    <div className="max-h-96 overflow-y-auto p-2">
-                        {commandResults().length === 0 ? (
-                            <div className="text-center py-8 text-zinc-500 text-sm">No results found.</div>
-                        ) : (
-                            commandResults().map((res, i) => (
-                                <button 
-                                    key={i} 
-                                    onClick={res.action}
-                                    className="w-full text-left p-3 hover:bg-zinc-800 rounded-lg flex items-center justify-between group"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
-                                            res.type === 'Project' ? 'bg-blue-900/30 text-blue-400' : 
-                                            res.type === 'Stock' ? 'bg-green-900/30 text-green-400' :
-                                            res.type === 'Machine' ? 'bg-amber-900/30 text-amber-400' :
-                                            'bg-zinc-800 text-zinc-400'
-                                        }`}>{res.type}</span>
-                                        <span className="text-zinc-200 font-medium">{res.label}</span>
-                                    </div>
-                                    <span className="text-xs text-zinc-500 group-hover:text-zinc-400">{res.desc}</span>
-                                </button>
-                            ))
-                        )}
-                    </div>
-                </div>
-                <div className="absolute inset-0 -z-10" onClick={() => setIsCmdOpen(false)}></div>
-            </div>
-        )}
+        <CommandPalette
+          isOpen={isCmdOpen}
+          query={cmdQuery}
+          results={paletteResults}
+          onClose={() => setIsCmdOpen(false)}
+          onQueryChange={setCmdQuery}
+          onSelect={handleCommandSelect}
+        />
 
         {/* Content Views */}
         <div className="flex-1 overflow-hidden relative">
@@ -481,7 +601,14 @@ const App: React.FC = () => {
                 </div>
             )}
 
-            {currentView === 'stockroom' && <Stockroom items={inventory} onUpdate={setInventory} />}
+            {currentView === 'stockroom' && (
+              <Stockroom
+                items={inventory}
+                onUpdate={setInventory}
+                presetSearch={stockroomPresetSearch ?? undefined}
+                onClearPresetSearch={clearStockroomPreset}
+              />
+            )}
             {currentView === 'machines' && <MachinePark machines={machines} onUpdate={setMachines} />}
             {currentView === 'supply' && <SupplyChain vendors={vendors} onUpdate={setVendors} />}
             {currentView === 'library' && <ReferenceLibrary docs={docs} onUpdate={setDocs} />}
