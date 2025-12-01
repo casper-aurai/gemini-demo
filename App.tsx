@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Project, ProjectStatus, InventoryItem, Machine, Vendor, ReferenceDoc, ViewMode, Notification } from './types';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Project, ProjectStatus, InventoryItem, Machine, Vendor, ReferenceDoc, ViewMode, Notification, SecuritySettings } from './types';
 import ProjectCard from './components/ProjectCard';
 import ProjectDetail from './components/ProjectDetail';
 import Stockroom from './components/Stockroom';
@@ -9,11 +9,11 @@ import ReferenceLibrary from './components/ReferenceLibrary';
 import SupplyChain from './components/SupplyChain';
 import Analytics from './components/Analytics';
 import SystemCore from './components/SystemCore';
+import { CloudSyncProvider, EncryptedLocalStorageProvider, SystemSnapshot } from './services/dataProvider';
 
-import { 
-    LayoutDashboard, Plus, Search, Activity, Box, Package, Settings, 
-    Book, Truck, BarChart3, Database, Bell, ChevronRight, Command, 
-    Layers, AlertCircle 
+import {
+    LayoutDashboard, Plus, Search, Box, Package, Settings,
+    Book, Truck, BarChart3, Database, Bell, ChevronRight, Command
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -27,6 +27,27 @@ const App: React.FC = () => {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [docs, setDocs] = useState<ReferenceDoc[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [initialized, setInitialized] = useState(false);
+
+  const loadSecuritySettings = (): SecuritySettings => {
+    const raw = localStorage.getItem('construct_os_security_settings');
+    if (raw) {
+        try {
+            const parsed = JSON.parse(raw);
+            return {
+                passphrase: parsed.passphrase || 'construct-os-local',
+                cloudEnabled: Boolean(parsed.cloudEnabled),
+                cloudEndpoint: parsed.cloudEndpoint || 'http://localhost:4000/snapshot'
+            };
+        } catch (err) {
+            console.warn('Failed to parse security settings', err);
+        }
+    }
+    return { passphrase: 'construct-os-local', cloudEnabled: false, cloudEndpoint: 'http://localhost:4000/snapshot' };
+  };
+
+  const [securitySettings, setSecuritySettings] = useState<SecuritySettings>(() => loadSecuritySettings());
+  const [syncStatus, setSyncStatus] = useState<string>('Idle');
   
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -60,15 +81,8 @@ const App: React.FC = () => {
   };
 
   // --- PERSISTENCE ---
-  useEffect(() => {
-    const load = (key: string, setter: any, seed: any) => {
-        const saved = localStorage.getItem(key);
-        if (saved) setter(JSON.parse(saved));
-        else setter(seed);
-    };
-
-    // Initial Seeds
-    load('construct_os_projects', setProjects, [
+  const seedSnapshot: SystemSnapshot = {
+    projects: [
         {
             id: '1', title: '3-Axis CNC Router V4', description: 'Aluminum extrusion frame 1500x1500mm. NEMA 23 High Torque steppers.', status: 'wiring', createdAt: Date.now(), imageUrl: 'https://picsum.photos/seed/cnc/800/600',
             bom: [{ category: 'Frame', itemName: '2080 Extrusion', quantity: 4, specifications: '1500mm, Black Anodized', unitCost: 45.00 }],
@@ -77,14 +91,12 @@ const App: React.FC = () => {
         {
             id: '2', title: 'Hydraulic Log Splitter', description: '20-ton cylinder force. 6.5HP gas engine.', status: 'fabrication', createdAt: Date.now() - 10000000, imageUrl: 'https://picsum.photos/seed/hydro/800/600', bom: [], tasks: [], chatHistory: []
         }
-    ]);
-
-    load('construct_os_inventory', setInventory, [
+    ],
+    inventory: [
         { id: '1', name: '6061 Aluminum Plate', category: 'Raw Material', quantity: 4, unit: 'sheets', location: 'Rack 1', minLevel: 2, cost: 120 },
         { id: '2', name: 'M5x20mm SHCS', category: 'Hardware', quantity: 150, unit: 'pcs', location: 'Bin A12', minLevel: 50, cost: 0.15 }
-    ]);
-
-    load('construct_os_machines', setMachines, [
+    ],
+    machines: [
         { id: '1', name: 'Bridgeport Mill', type: 'Milling', status: 'operational', lastService: Date.now() - 10000000, nextService: Date.now() + 2000000, notes: 'Quill feed sticky.' },
         { id: '2', name: 'Ender 3 Pro', type: '3D Printer', status: 'maintenance', lastService: Date.now(), nextService: Date.now() + 5000000, notes: 'Nozzle clog.' },
         { id: '3', name: 'Bosch GTS 10 XC', type: 'Table Saw', status: 'operational', lastService: Date.now() - 2000000, nextService: Date.now() + 4000000, notes: 'Blade alignment perfect.' },
@@ -92,21 +104,67 @@ const App: React.FC = () => {
         { id: '5', name: 'Makita DGA504', type: 'Grinder', status: 'operational', lastService: Date.now() - 1000000, nextService: Date.now() + 2000000, notes: 'Paddle switch.' },
         { id: '6', name: 'Makita DMR115', type: 'Audio', status: 'operational', lastService: Date.now() - 8000000, nextService: Date.now() + 20000000, notes: 'Workshop Radio / DAB+.' },
         { id: '7', name: 'Kärcher WD 6 P', type: 'Vacuum', status: 'degraded', lastService: Date.now() - 500000, nextService: Date.now() - 1000000, notes: 'Filter clean needed overdue.' }
-    ]);
-
-    load('construct_os_vendors', setVendors, [
+    ],
+    vendors: [
         { id: '1', name: 'McMaster-Carr', website: 'mcmaster.com', category: 'General', rating: 5, notes: 'Next day delivery.', leadTime: '1 Day', lastOrder: Date.now() - 86400000 },
         { id: '2', name: 'DigiKey', website: 'digikey.com', category: 'Electronics', rating: 4, leadTime: '3 Days' }
-    ]);
-    
-    load('construct_os_docs', setDocs, []);
+    ],
+    docs: []
+  };
 
-    // Mock Notifications
-    setNotifications([
-        { id: '1', type: 'alert', message: 'Kärcher WD 6 P maintenance overdue', timestamp: Date.now(), read: false },
-        { id: '2', type: 'info', message: 'New analytics report available', timestamp: Date.now() - 100000, read: false }
-    ]);
+  const snapshotFromState = (): SystemSnapshot => ({ projects, inventory, machines, vendors, docs });
 
+  const persistSnapshot = useCallback(async (snapshot: SystemSnapshot) => {
+    const localProvider = new EncryptedLocalStorageProvider('construct_os_snapshot', () => securitySettings.passphrase);
+    await localProvider.saveSnapshot(snapshot);
+
+    if (securitySettings.cloudEnabled && securitySettings.cloudEndpoint) {
+        const cloudProvider = new CloudSyncProvider(securitySettings.cloudEndpoint, () => securitySettings.passphrase);
+        try {
+            await cloudProvider.saveSnapshot(snapshot);
+            setSyncStatus('Synced to cloud');
+        } catch (err) {
+            console.error('Cloud sync failed', err);
+            setSyncStatus('Cloud sync failed');
+        }
+    }
+  }, [securitySettings]);
+
+  useEffect(() => {
+    const restore = async () => {
+        const localProvider = new EncryptedLocalStorageProvider('construct_os_snapshot', () => securitySettings.passphrase);
+        const cloudProvider = new CloudSyncProvider(securitySettings.cloudEndpoint, () => securitySettings.passphrase);
+        let snapshot: SystemSnapshot | null = null;
+
+        if (securitySettings.cloudEnabled) {
+            try {
+                snapshot = await cloudProvider.loadSnapshot();
+                if (snapshot) setSyncStatus('Restored from cloud');
+            } catch (err) {
+                console.warn('Cloud restore failed', err);
+                setSyncStatus('Cloud restore failed; using local data');
+            }
+        }
+
+        if (!snapshot) {
+            snapshot = await localProvider.loadSnapshot();
+        }
+
+        if (!snapshot) snapshot = seedSnapshot;
+
+        setProjects(snapshot.projects);
+        setInventory(snapshot.inventory);
+        setMachines(snapshot.machines);
+        setVendors(snapshot.vendors);
+        setDocs(snapshot.docs);
+        setNotifications([
+            { id: '1', type: 'alert', message: 'Kärcher WD 6 P maintenance overdue', timestamp: Date.now(), read: false },
+            { id: '2', type: 'info', message: 'Low stock: 6061 Aluminum', timestamp: Date.now() - 100000, read: false }
+        ]);
+        setInitialized(true);
+    };
+
+    restore();
   }, []);
 
   // Save on Change
@@ -165,6 +223,15 @@ const App: React.FC = () => {
       if(data.machines) setMachines(data.machines);
       if(data.vendors) setVendors(data.vendors);
       if(data.docs) setDocs(data.docs);
+  };
+
+  const updateSecuritySettings = (partial: Partial<SecuritySettings>) => {
+      setSecuritySettings(prev => ({ ...prev, ...partial }));
+  };
+
+  const manualCloudSync = async () => {
+      if (!initialized) return;
+      await persistSnapshot(snapshotFromState());
   };
 
   // --- COMMAND PALETTE SEARCH LOGIC ---
@@ -419,7 +486,16 @@ const App: React.FC = () => {
             {currentView === 'supply' && <SupplyChain vendors={vendors} onUpdate={setVendors} />}
             {currentView === 'library' && <ReferenceLibrary docs={docs} onUpdate={setDocs} />}
             {currentView === 'analytics' && <Analytics projects={projects} inventory={inventory} machines={machines} />}
-            {currentView === 'system' && <SystemCore exportData={exportSystem} importData={importSystem} />}
+            {currentView === 'system' && (
+                <SystemCore
+                    exportData={exportSystem}
+                    importData={importSystem}
+                    securitySettings={securitySettings}
+                    onUpdateSecurity={updateSecuritySettings}
+                    onSync={manualCloudSync}
+                    syncStatus={syncStatus}
+                />
+            )}
         </div>
 
       </main>

@@ -1,16 +1,26 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Save, UploadCloud, Database, ShieldCheck, Lock, Globe, RefreshCcw } from 'lucide-react';
+import { SecuritySettings } from '../types';
 
 interface SystemCoreProps {
     exportData: () => void;
     importData: (json: string) => void;
+    securitySettings: SecuritySettings;
+    onUpdateSecurity: (partial: Partial<SecuritySettings>) => void;
+    onSync: () => void;
+    syncStatus?: string;
 }
 
-const SystemCore: React.FC<SystemCoreProps> = ({ exportData, importData }) => {
+const SystemCore: React.FC<SystemCoreProps> = ({ exportData, importData, securitySettings, onUpdateSecurity, onSync, syncStatus }) => {
     const [activeTab, setActiveTab] = useState<'general' | 'backup' | 'security'>('general');
-    const [cloudSync, setCloudSync] = useState(false);
-    const [encryption, setEncryption] = useState(true);
+    const [cloudEndpoint, setCloudEndpoint] = useState(securitySettings.cloudEndpoint);
+    const [passphrase, setPassphrase] = useState(securitySettings.passphrase);
+
+    useEffect(() => {
+        setCloudEndpoint(securitySettings.cloudEndpoint);
+        setPassphrase(securitySettings.passphrase);
+    }, [securitySettings]);
 
     const handleImport = () => {
         const json = prompt("Paste full JSON backup string here:");
@@ -50,7 +60,7 @@ const SystemCore: React.FC<SystemCoreProps> = ({ exportData, importData }) => {
                     >
                         Backup & Restore
                     </button>
-                    <button 
+                    <button
                         onClick={() => setActiveTab('security')}
                         className={`w-full text-left px-4 py-2 rounded-md text-sm font-medium ${activeTab === 'security' ? 'bg-white shadow-sm text-zinc-900 border border-zinc-200' : 'text-zinc-500 hover:bg-zinc-100'}`}
                     >
@@ -109,40 +119,83 @@ const SystemCore: React.FC<SystemCoreProps> = ({ exportData, importData }) => {
                     {activeTab === 'security' && (
                          <div className="max-w-2xl space-y-6">
                             <h3 className="font-bold text-lg text-zinc-900 border-b border-zinc-100 pb-2">Security & Cloud</h3>
-                            
-                            <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+
+                            <div className="space-y-3 p-4 bg-zinc-50 rounded-lg border border-zinc-200">
                                 <div className="flex items-center gap-3">
                                     <div className="bg-white p-2 rounded-full shadow-sm">
                                         <Lock size={18} className="text-zinc-700"/>
                                     </div>
                                     <div>
                                         <h4 className="font-bold text-sm text-zinc-800">Local Encryption</h4>
-                                        <p className="text-xs text-zinc-500">Encrypt data at rest in LocalStorage.</p>
+                                        <p className="text-xs text-zinc-500">AES-GCM encrypted local snapshots using your passphrase.</p>
                                     </div>
                                 </div>
-                                <div 
-                                    onClick={() => setEncryption(!encryption)}
-                                    className={`w-10 h-5 rounded-full cursor-pointer transition-colors relative ${encryption ? 'bg-green-500' : 'bg-zinc-300'}`}
-                                >
-                                    <div className={`w-3 h-3 bg-white rounded-full absolute top-1 transition-all ${encryption ? 'left-6' : 'left-1'}`}></div>
+                                <div className="grid grid-cols-3 gap-3 items-end">
+                                    <div className="col-span-2">
+                                        <label className="block text-xs font-bold uppercase text-zinc-500 mb-1">Passphrase</label>
+                                        <input
+                                            type="password"
+                                            value={passphrase}
+                                            onChange={(e) => setPassphrase(e.target.value)}
+                                            className="w-full bg-white border border-zinc-300 rounded px-3 py-2 text-sm"
+                                            placeholder="Set a local encryption secret"
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={() => onUpdateSecurity({ passphrase })}
+                                        className="bg-zinc-900 text-white px-3 py-2 rounded-md text-sm font-semibold hover:bg-black transition-colors"
+                                    >
+                                        Save Passphrase
+                                    </button>
                                 </div>
                             </div>
 
-                            <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg border border-zinc-200">
-                                <div className="flex items-center gap-3">
-                                    <div className="bg-white p-2 rounded-full shadow-sm">
-                                        <Globe size={18} className="text-zinc-700"/>
+                            <div className="space-y-3 p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+                                <div className="flex items-center gap-3 justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-white p-2 rounded-full shadow-sm">
+                                            <Globe size={18} className="text-zinc-700"/>
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-sm text-zinc-800">Cloud Sync (Beta)</h4>
+                                            <p className="text-xs text-zinc-500">Post encrypted snapshots to a remote endpoint.</p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h4 className="font-bold text-sm text-zinc-800">Cloud Sync (Beta)</h4>
-                                        <p className="text-xs text-zinc-500">Sync registry across devices via Encrypted Relay.</p>
+                                    <div
+                                        onClick={() => onUpdateSecurity({ cloudEnabled: !securitySettings.cloudEnabled })}
+                                        className={`w-10 h-5 rounded-full cursor-pointer transition-colors relative ${securitySettings.cloudEnabled ? 'bg-green-500' : 'bg-zinc-300'}`}
+                                    >
+                                        <div className={`w-3 h-3 bg-white rounded-full absolute top-1 transition-all ${securitySettings.cloudEnabled ? 'left-6' : 'left-1'}`}></div>
                                     </div>
                                 </div>
-                                <div 
-                                    onClick={() => setCloudSync(!cloudSync)}
-                                    className={`w-10 h-5 rounded-full cursor-pointer transition-colors relative ${cloudSync ? 'bg-green-500' : 'bg-zinc-300'}`}
-                                >
-                                    <div className={`w-3 h-3 bg-white rounded-full absolute top-1 transition-all ${cloudSync ? 'left-6' : 'left-1'}`}></div>
+                                <div className="grid grid-cols-3 gap-3 items-end">
+                                    <div className="col-span-2">
+                                        <label className="block text-xs font-bold uppercase text-zinc-500 mb-1">Sync Endpoint</label>
+                                        <input
+                                            type="text"
+                                            value={cloudEndpoint}
+                                            onChange={(e) => setCloudEndpoint(e.target.value)}
+                                            className="w-full bg-white border border-zinc-300 rounded px-3 py-2 text-sm"
+                                            placeholder="https://relay.example.com/snapshot"
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={() => onUpdateSecurity({ cloudEndpoint })}
+                                        className="bg-zinc-900 text-white px-3 py-2 rounded-md text-sm font-semibold hover:bg-black transition-colors"
+                                    >
+                                        Save Endpoint
+                                    </button>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={onSync}
+                                        className="flex items-center gap-2 px-3 py-2 text-sm rounded-md border border-zinc-200 bg-white hover:bg-zinc-100"
+                                        disabled={!securitySettings.cloudEnabled}
+                                    >
+                                        <UploadCloud size={16} />
+                                        Manual Sync
+                                    </button>
+                                    <span className="text-xs text-zinc-500">Status: {syncStatus || 'Idle'}</span>
                                 </div>
                             </div>
 

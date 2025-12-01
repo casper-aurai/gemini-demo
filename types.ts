@@ -7,6 +7,12 @@ export type MachineStatus = 'operational' | 'degraded' | 'down' | 'maintenance' 
 
 export type ViewMode = 'dashboard' | 'stockroom' | 'machines' | 'library' | 'supply' | 'analytics' | 'system';
 
+export interface SecuritySettings {
+    passphrase: string;
+    cloudEnabled: boolean;
+    cloudEndpoint: string;
+}
+
 export interface Notification {
     id: string;
     type: 'alert' | 'info' | 'success';
