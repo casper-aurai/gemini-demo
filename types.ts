@@ -67,6 +67,8 @@ export interface InventoryItem {
     minLevel: number;
     lastUpdated?: number;
     cost?: number;
+    leadTimeDays?: number;
+    vendorRating?: number;
 }
 
 export interface Machine {
@@ -90,6 +92,7 @@ export interface Vendor {
     leadTime?: string; // e.g., "2 Days"
     lastOrder?: number;
     notes?: string;
+    location?: string;
 }
 
 export interface ReferenceDoc {
