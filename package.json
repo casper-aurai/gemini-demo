@@ -10,6 +10,10 @@
   },
   "dependencies": {
     "@google/genai": "latest",
+    "@mui/icons-material": "^6.2.0",
+    "@mui/material": "^6.2.0",
+    "@emotion/react": "^11.13.5",
+    "@emotion/styled": "^11.13.5",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "lucide-react": "0.378.0"
