@@ -98,18 +98,24 @@ export class EncryptedLocalStorageProvider implements DataProvider {
 }
 
 export class CloudSyncProvider implements DataProvider {
-    constructor(private endpoint: string, private getPassphrase: () => string) {}
+    constructor(private endpoint: string, private getPassphrase: () => string, private encryptPayloads: boolean = true) {}
 
     async loadSnapshot(): Promise<SystemSnapshot | null> {
         const response = await fetch(this.endpoint, { method: 'GET' });
         if (!response.ok) throw new Error('Failed to fetch snapshot');
         const body = await response.json();
         if (!body?.payload) return null;
-        return decryptSnapshot(body.payload, this.getPassphrase());
+        return this.encryptPayloads
+            ? decryptSnapshot(body.payload, this.getPassphrase())
+            : typeof body.payload === 'string'
+                ? JSON.parse(body.payload) as SystemSnapshot
+                : (body.payload as SystemSnapshot);
     }
 
     async saveSnapshot(snapshot: SystemSnapshot) {
-        const payload = await encryptSnapshot(snapshot, this.getPassphrase());
+        const payload = this.encryptPayloads
+            ? await encryptSnapshot(snapshot, this.getPassphrase())
+            : JSON.stringify(snapshot);
         await fetch(this.endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
