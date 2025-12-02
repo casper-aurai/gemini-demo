@@ -18,7 +18,7 @@ import { useDensity } from './designSystem';
 
 import {
     LayoutDashboard, Plus, Search, Box, Package, Settings,
-    Book, Truck, BarChart3, Database, Bell, ChevronRight, Command
+    Book, Truck, BarChart3, Database, ChevronRight, Command
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -34,6 +34,11 @@ const App: React.FC = () => {
   const [docs, setDocs] = useState<ReferenceDoc[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = notificationService.subscribe(setNotifications);
+    return () => unsubscribe();
+  }, []);
 
   const loadSecuritySettings = (): SecuritySettings => {
     const raw = localStorage.getItem('construct_os_security_settings');
@@ -62,30 +67,6 @@ const App: React.FC = () => {
   const [cmdQuery, setCmdQuery] = useState('');
   const [stockroomPresetSearch, setStockroomPresetSearch] = useState<string | null>(null);
   const searchIndexRef = useRef(new SearchService());
-
-  const reconcileInventoryNotifications = (
-    items: InventoryItem[],
-    existingNotifications: Notification[],
-  ): Notification[] => {
-    const nonInventory = existingNotifications.filter(n => !n.id.startsWith('inv-'));
-
-    const inventoryAlerts = items
-      .filter(item => item.quantity <= item.minLevel)
-      .map(item => {
-        const id = `inv-${item.id}`;
-        const previous = existingNotifications.find(n => n.id === id);
-
-        return {
-          id,
-          type: 'alert' as const,
-          message: `Low stock: ${item.name} (${item.quantity} ${item.unit})`,
-          timestamp: previous?.timestamp ?? Date.now(),
-          read: previous?.read ?? false,
-        };
-      });
-
-    return [...nonInventory, ...inventoryAlerts];
-  };
 
   // --- PERSISTENCE ---
   const seedSnapshot: SystemSnapshot = {
@@ -164,10 +145,6 @@ const App: React.FC = () => {
         setMachines(snapshot.machines);
         setVendors(snapshot.vendors);
         setDocs(snapshot.docs);
-        setNotifications([
-            { id: '1', type: 'alert', message: 'Kärcher WD 6 P maintenance overdue', timestamp: Date.now(), read: false },
-            { id: '2', type: 'info', message: 'Low stock: 6061 Aluminum', timestamp: Date.now() - 100000, read: false }
-        ]);
         setInitialized(true);
     };
 
@@ -178,11 +155,15 @@ const App: React.FC = () => {
   useEffect(() => localStorage.setItem('construct_os_projects', JSON.stringify(projects)), [projects]);
   useEffect(() => {
     localStorage.setItem('construct_os_inventory', JSON.stringify(inventory));
-    setNotifications(prev => reconcileInventoryNotifications(inventory, prev));
   }, [inventory]);
   useEffect(() => localStorage.setItem('construct_os_machines', JSON.stringify(machines)), [machines]);
   useEffect(() => localStorage.setItem('construct_os_vendors', JSON.stringify(vendors)), [vendors]);
   useEffect(() => localStorage.setItem('construct_os_docs', JSON.stringify(docs)), [docs]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    notificationService.recompute({ inventory, machines, vendors });
+  }, [inventory, machines, vendors, initialized]);
 
   // --- GLOBAL KEYBOARD SHORTCUTS ---
   useEffect(() => {
@@ -224,6 +205,13 @@ const App: React.FC = () => {
       if(data.machines) setMachines(data.machines);
       if(data.vendors) setVendors(data.vendors);
       if(data.docs) setDocs(data.docs);
+  };
+
+  const markNotificationRead = (id: string) => notificationService.markRead(id);
+  const markAllNotificationsRead = () => notificationService.markAllRead();
+  const handleNotificationNavigate = (link: { view: ViewMode; id?: string }) => {
+    setCurrentView(link.view);
+    setSelectedProjectId(null);
   };
 
   const updateSecuritySettings = (partial: Partial<SecuritySettings>) => {
@@ -385,7 +373,6 @@ const App: React.FC = () => {
   // --- RENDER HELPERS ---
   const filteredProjects = projects.filter(p => p.title.toLowerCase().includes(searchTerm.toLowerCase()));
   const selectedProject = projects.find(p => p.id === selectedProjectId);
-  const unreadCount = notifications.filter(n => !n.read).length;
 
   const Breadcrumbs = () => {
       if(selectedProject) return (

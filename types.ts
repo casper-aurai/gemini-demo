@@ -13,12 +13,21 @@ export interface SecuritySettings {
     cloudEndpoint: string;
 }
 
+export type NotificationSource = 'inventory' | 'maintenance' | 'vendor';
+
+export interface NotificationLink {
+    view: ViewMode;
+    id?: string;
+}
+
 export interface Notification {
     id: string;
     type: 'alert' | 'info' | 'success';
     message: string;
     timestamp: number;
     read: boolean;
+    source: NotificationSource;
+    link?: NotificationLink;
 }
 
 export interface ProjectTask {
