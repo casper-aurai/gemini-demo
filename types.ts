@@ -40,12 +40,21 @@ export interface BackupSettings {
     retention: number;
 }
 
+export type NotificationSource = 'inventory' | 'maintenance' | 'vendor';
+
+export interface NotificationLink {
+    view: ViewMode;
+    id?: string;
+}
+
 export interface Notification {
     id: string;
     type: 'alert' | 'info' | 'success';
     message: string;
     timestamp: number;
     read: boolean;
+    source: NotificationSource;
+    link?: NotificationLink;
 }
 
 export interface ProjectTask {
@@ -96,6 +105,29 @@ export interface InventoryItem {
     cost?: number;
 }
 
+export interface MachineMaintenanceEntry {
+    date: number;
+    note: string;
+    cost?: number;
+    technician?: string;
+    parts?: string[];
+}
+
+export interface MachineStatusChange {
+    date: number;
+    status: MachineStatus;
+    note?: string;
+}
+
+export interface MachineMaintenanceWindow {
+    id: string;
+    title: string;
+    start: number;
+    end: number;
+    technician?: string;
+    type?: string;
+}
+
 export interface Machine {
     id: string;
     name: string;
@@ -105,7 +137,10 @@ export interface Machine {
     nextService: number;
     image?: string;
     notes?: string;
-    maintenanceLog?: { date: number; note: string }[];
+    maintenanceLog?: MachineMaintenanceEntry[];
+    statusHistory?: MachineStatusChange[];
+    utilization?: number[];
+    maintenanceWindows?: MachineMaintenanceWindow[];
 }
 
 export interface Vendor {
