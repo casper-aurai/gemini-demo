@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+
+import React, { useEffect, useMemo, useState } from 'react';
 import { InventoryItem } from '../types';
 import { Package, Plus, Trash2, AlertTriangle, Search, Filter, ArrowUpDown, Clock3 } from 'lucide-react';
 import {
@@ -28,20 +29,46 @@ import {
 import { useDensity } from '../designSystem';
 
 interface StockroomProps {
-  items: InventoryItem[];
-  onUpdate: (items: InventoryItem[]) => void;
+    items: InventoryItem[];
+    onUpdate: (items: InventoryItem[]) => void;
+    presetSearch?: string;
+    onClearPresetSearch?: () => void;
 }
 
-const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate }) => {
-  const { density } = useDensity();
-  const controlSize = density === 'compact' ? 'small' : 'medium';
-  const [search, setSearch] = useState('');
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
-  const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'healthy' | 'caution' | 'critical'>('all');
-  const [minStockLevel, setMinStockLevel] = useState(0);
-  const [quickFilters, setQuickFilters] = useState({ lowStock: false, recent: false });
+const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate, presetSearch, onClearPresetSearch }) => {
+    const [search, setSearch] = useState('');
+    const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+    const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+    const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
+    const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'healthy' | 'caution' | 'critical'>('all');
+    const [minStockLevel, setMinStockLevel] = useState(0);
+    const [quickFilters, setQuickFilters] = useState({ lowStock: false, recent: false });
+
+    useEffect(() => {
+        if (typeof presetSearch === 'string') {
+            setSearch(presetSearch);
+            onClearPresetSearch?.();
+        }
+    }, [presetSearch, onClearPresetSearch]);
+
+    const addItem = () => {
+        const newItem: InventoryItem = {
+            id: Date.now().toString(),
+            name: 'New Item',
+            category: 'General',
+            quantity: 0,
+            unit: 'pcs',
+            location: 'Unassigned',
+            minLevel: 5,
+            cost: 0,
+            lastUpdated: Date.now()
+        };
+        onUpdate([newItem, ...items]);
+    };
+
+    const updateItem = (id: string, field: keyof InventoryItem, value: any) => {
+        onUpdate(items.map(i => i.id === id ? { ...i, [field]: value, lastUpdated: Date.now() } : i));
+    };
 
   const addItem = () => {
     const newItem: InventoryItem = {
