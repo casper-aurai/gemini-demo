@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Project, ProjectStatus, InventoryItem, Machine, Vendor, ReferenceDoc, ViewMode, Notification, SecuritySettings } from './types';
+import { Project, ProjectStatus, InventoryItem, Machine, Vendor, ReferenceDoc, ViewMode, Notification, SecuritySettings, UserPreferences, BackupSettings } from './types';
 import ProjectCard from './components/ProjectCard';
 import ProjectDetail from './components/ProjectDetail';
 import Stockroom from './components/Stockroom';
@@ -9,14 +9,20 @@ import Library from './components/Library';
 import SupplyChain from './components/SupplyChain';
 import Analytics from './components/Analytics';
 import SystemCore from './components/SystemCore';
+import CommandPalette from './components/CommandPalette';
+import SearchService, { SearchEntry } from './services/searchService';
 import { CloudSyncProvider, EncryptedLocalStorageProvider, SystemSnapshot } from './services/dataProvider';
+import { Badge, Box as MuiBox, Button, IconButton, Stack, Typography } from '@mui/material';
+import SettingsMenu from './components/SettingsMenu';
+import { useDensity } from './designSystem';
 
 import {
     LayoutDashboard, Plus, Search, Box, Package, Settings,
-    Book, Truck, BarChart3, Database, Bell, ChevronRight, Command
+    Book, Truck, BarChart3, Database, ChevronRight, Command
 } from 'lucide-react';
 
 const App: React.FC = () => {
+  const { density } = useDensity();
   // --- STATE MANAGEMENT ---
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -29,6 +35,11 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [initialized, setInitialized] = useState(false);
 
+  useEffect(() => {
+    const unsubscribe = notificationService.subscribe(setNotifications);
+    return () => unsubscribe();
+  }, []);
+
   const loadSecuritySettings = (): SecuritySettings => {
     const raw = localStorage.getItem('construct_os_security_settings');
     if (raw) {
@@ -37,48 +48,62 @@ const App: React.FC = () => {
             return {
                 passphrase: parsed.passphrase || 'construct-os-local',
                 cloudEnabled: Boolean(parsed.cloudEnabled),
-                cloudEndpoint: parsed.cloudEndpoint || 'http://localhost:4000/snapshot'
+                cloudEndpoint: parsed.cloudEndpoint || 'http://localhost:4000/snapshot',
+                encryptCloudPayloads: parsed.encryptCloudPayloads ?? true,
             };
         } catch (err) {
             console.warn('Failed to parse security settings', err);
         }
     }
-    return { passphrase: 'construct-os-local', cloudEnabled: false, cloudEndpoint: 'http://localhost:4000/snapshot' };
+    return { passphrase: 'construct-os-local', cloudEnabled: false, cloudEndpoint: 'http://localhost:4000/snapshot', encryptCloudPayloads: true };
+  };
+
+  const loadPreferences = (): UserPreferences => {
+    const raw = localStorage.getItem('construct_os_preferences');
+    if (raw) {
+        try {
+            return JSON.parse(raw) as UserPreferences;
+        } catch (err) {
+            console.warn('Failed to parse preferences', err);
+        }
+    }
+
+    return {
+        appearance: { theme: 'dark', density: 'comfortable' },
+        localization: {
+            language: navigator.language || 'en',
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        },
+        notifications: { alerts: true, maintenance: true, digest: false },
+    };
+  };
+
+  const loadBackupSettings = (): BackupSettings => {
+    const raw = localStorage.getItem('construct_os_backup_settings');
+    if (raw) {
+        try {
+            return JSON.parse(raw) as BackupSettings;
+        } catch (err) {
+            console.warn('Failed to parse backup settings', err);
+        }
+    }
+    return { intervalMinutes: 15, retention: 10 };
   };
 
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings>(() => loadSecuritySettings());
   const [syncStatus, setSyncStatus] = useState<string>('Idle');
-  
+  const [preferences, setPreferences] = useState<UserPreferences>(() => loadPreferences());
+  const [backupSettings, setBackupSettings] = useState<BackupSettings>(() => loadBackupSettings());
+  const [backups, setBackups] = useState<BackupSummary[]>([]);
+  const backupStore = useRef(new IndexedDBStorage());
+
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   // Command Palette State
   const [isCmdOpen, setIsCmdOpen] = useState(false);
   const [cmdQuery, setCmdQuery] = useState('');
-  const cmdInputRef = useRef<HTMLInputElement>(null);
-
-  const reconcileInventoryNotifications = (
-    items: InventoryItem[],
-    existingNotifications: Notification[],
-  ): Notification[] => {
-    const nonInventory = existingNotifications.filter(n => !n.id.startsWith('inv-'));
-
-    const inventoryAlerts = items
-      .filter(item => item.quantity <= item.minLevel)
-      .map(item => {
-        const id = `inv-${item.id}`;
-        const previous = existingNotifications.find(n => n.id === id);
-
-        return {
-          id,
-          type: 'alert' as const,
-          message: `Low stock: ${item.name} (${item.quantity} ${item.unit})`,
-          timestamp: previous?.timestamp ?? Date.now(),
-          read: previous?.read ?? false,
-        };
-      });
-
-    return [...nonInventory, ...inventoryAlerts];
-  };
+  const [stockroomPresetSearch, setStockroomPresetSearch] = useState<string | null>(null);
+  const searchIndexRef = useRef(new SearchService());
 
   // --- PERSISTENCE ---
   const seedSnapshot: SystemSnapshot = {
@@ -153,7 +178,11 @@ const App: React.FC = () => {
     await localProvider.saveSnapshot(snapshot);
 
     if (securitySettings.cloudEnabled && securitySettings.cloudEndpoint) {
-        const cloudProvider = new CloudSyncProvider(securitySettings.cloudEndpoint, () => securitySettings.passphrase);
+        const cloudProvider = new CloudSyncProvider(
+            securitySettings.cloudEndpoint,
+            () => securitySettings.passphrase,
+            securitySettings.encryptCloudPayloads
+        );
         try {
             await cloudProvider.saveSnapshot(snapshot);
             setSyncStatus('Synced to cloud');
@@ -164,10 +193,47 @@ const App: React.FC = () => {
     }
   }, [securitySettings]);
 
+  const refreshBackups = useCallback(async () => {
+    const list = await backupStore.current.listBackups();
+    setBackups(list);
+  }, []);
+
+  const createBackup = useCallback(async (label = 'Manual backup') => {
+    const snapshot = snapshotFromState();
+    await backupStore.current.saveSnapshot(snapshot, {
+        label,
+        passphrase: securitySettings.passphrase,
+    });
+    await backupStore.current.prune(Math.max(backupSettings.retention, 1));
+    await refreshBackups();
+    setSyncStatus(`${label} stored locally`);
+  }, [backupSettings.retention, docs, inventory, machines, projects, refreshBackups, securitySettings.passphrase, vendors]);
+
+  const restoreBackup = useCallback(async (id: string) => {
+    const snapshot = await backupStore.current.loadSnapshot(id, securitySettings.passphrase);
+    if (!snapshot) return;
+
+    setProjects(snapshot.projects);
+    setInventory(snapshot.inventory);
+    setMachines(snapshot.machines);
+    setVendors(snapshot.vendors);
+    setDocs(snapshot.docs);
+    setSyncStatus('Restored from local backup');
+  }, [securitySettings.passphrase]);
+
+  const deleteBackup = useCallback(async (id: string) => {
+    await backupStore.current.deleteBackup(id);
+    await refreshBackups();
+  }, [refreshBackups]);
+
   useEffect(() => {
     const restore = async () => {
         const localProvider = new EncryptedLocalStorageProvider('construct_os_snapshot', () => securitySettings.passphrase);
-        const cloudProvider = new CloudSyncProvider(securitySettings.cloudEndpoint, () => securitySettings.passphrase);
+        const cloudProvider = new CloudSyncProvider(
+            securitySettings.cloudEndpoint,
+            () => securitySettings.passphrase,
+            securitySettings.encryptCloudPayloads
+        );
         let snapshot: SystemSnapshot | null = null;
 
         if (securitySettings.cloudEnabled) {
@@ -191,25 +257,26 @@ const App: React.FC = () => {
         setMachines(snapshot.machines);
         setVendors(snapshot.vendors);
         setDocs(snapshot.docs);
-        setNotifications([
-            { id: '1', type: 'alert', message: 'Kärcher WD 6 P maintenance overdue', timestamp: Date.now(), read: false },
-            { id: '2', type: 'info', message: 'Low stock: 6061 Aluminum', timestamp: Date.now() - 100000, read: false }
-        ]);
         setInitialized(true);
+        refreshBackups();
     };
 
     restore();
-  }, []);
+  }, [refreshBackups, securitySettings]);
 
   // Save on Change
   useEffect(() => localStorage.setItem('construct_os_projects', JSON.stringify(projects)), [projects]);
   useEffect(() => {
     localStorage.setItem('construct_os_inventory', JSON.stringify(inventory));
-    setNotifications(prev => reconcileInventoryNotifications(inventory, prev));
   }, [inventory]);
   useEffect(() => localStorage.setItem('construct_os_machines', JSON.stringify(machines)), [machines]);
   useEffect(() => localStorage.setItem('construct_os_vendors', JSON.stringify(vendors)), [vendors]);
   useEffect(() => localStorage.setItem('construct_os_docs', JSON.stringify(docs)), [docs]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    notificationService.recompute({ inventory, machines, vendors });
+  }, [inventory, machines, vendors, initialized]);
 
   // --- GLOBAL KEYBOARD SHORTCUTS ---
   useEffect(() => {
@@ -230,18 +297,26 @@ const App: React.FC = () => {
       }
   }, [isCmdOpen]);
 
+  useEffect(() => {
+    if (!initialized) return;
+    const runBackup = () => createBackup('Scheduled backup');
+    runBackup();
+    const interval = setInterval(runBackup, Math.max(backupSettings.intervalMinutes, 1) * 60_000);
+    return () => clearInterval(interval);
+  }, [backupSettings.intervalMinutes, createBackup, initialized]);
+
   // --- ACTIONS ---
-  const addProject = (title: string) => {
+  const addProject = useCallback((title: string) => {
     const newProject: Project = { id: Date.now().toString(), title, description: "Initialize definition...", status: 'concept', createdAt: Date.now(), bom: [], tasks: [], chatHistory: [] };
     setProjects(prev => [newProject, ...prev]);
     setSelectedProjectId(newProject.id);
-  };
+  }, []);
 
   const updateProject = (p: Project) => setProjects(prev => prev.map(old => old.id === p.id ? p : old));
   const deleteProject = (id: string) => { if(confirm("Delete Project?")) setProjects(prev => prev.filter(p => p.id !== id)); };
 
-  const exportSystem = () => {
-      const dump = JSON.stringify({ projects, inventory, machines, vendors, docs });
+  const exportSystem = async () => {
+      const dump = await encryptSnapshot({ projects, inventory, machines, vendors, docs }, securitySettings.passphrase);
       const blob = new Blob([dump], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -250,8 +325,13 @@ const App: React.FC = () => {
       link.click();
   };
 
-  const importSystem = (json: string) => {
-      const data = JSON.parse(json);
+  const importSystem = async (json: string) => {
+      let data: any = null;
+      try {
+          data = await decryptSnapshot(json, securitySettings.passphrase);
+      } catch {
+          data = JSON.parse(json);
+      }
       if(data.projects) setProjects(data.projects);
       if(data.inventory) setInventory(data.inventory);
       if(data.machines) setMachines(data.machines);
@@ -259,8 +339,28 @@ const App: React.FC = () => {
       if(data.docs) setDocs(data.docs);
   };
 
+  const markNotificationRead = (id: string) => notificationService.markRead(id);
+  const markAllNotificationsRead = () => notificationService.markAllRead();
+  const handleNotificationNavigate = (link: { view: ViewMode; id?: string }) => {
+    setCurrentView(link.view);
+    setSelectedProjectId(null);
+  };
+
   const updateSecuritySettings = (partial: Partial<SecuritySettings>) => {
       setSecuritySettings(prev => ({ ...prev, ...partial }));
+  };
+
+  const updatePreferences = (partial: Partial<UserPreferences>) => {
+      setPreferences(prev => ({
+          ...prev,
+          appearance: { ...prev.appearance, ...(partial.appearance || {}) },
+          localization: { ...prev.localization, ...(partial.localization || {}) },
+          notifications: { ...prev.notifications, ...(partial.notifications || {}) },
+      }));
+  };
+
+  const updateBackupSettings = (partial: Partial<BackupSettings>) => {
+      setBackupSettings(prev => ({ ...prev, ...partial }));
   };
 
   const manualCloudSync = async () => {
@@ -268,45 +368,156 @@ const App: React.FC = () => {
       await persistSnapshot(snapshotFromState());
   };
 
-  // --- COMMAND PALETTE SEARCH LOGIC ---
-  const commandResults = () => {
-      if(!cmdQuery) return [];
-      const q = cmdQuery.toLowerCase();
-      const results: {type: string, label: string, desc: string, action: () => void}[] = [];
+  const clearStockroomPreset = useCallback(() => setStockroomPresetSearch(null), []);
 
-      // Projects
-      projects.filter(p => p.title.toLowerCase().includes(q)).forEach(p => {
-          results.push({ type: 'Project', label: p.title, desc: p.status, action: () => { setSelectedProjectId(p.id); setIsCmdOpen(false); }});
+  useEffect(() => {
+    const entries: SearchEntry[] = [];
+
+    projects.forEach((p) => {
+      entries.push({
+        id: `project-${p.id}`,
+        type: 'project',
+        title: p.title,
+        subtitle: p.status,
+        keywords: [p.description || '', ...(p.tasks?.map((t) => t.text) || [])],
+        action: () => {
+          setSelectedProjectId(p.id);
+          setIsCmdOpen(false);
+        },
       });
-      // Inventory
-      inventory.filter(i => i.name.toLowerCase().includes(q)).forEach(i => {
-          results.push({ type: 'Stock', label: i.name, desc: `${i.quantity} ${i.unit}`, action: () => { setCurrentView('stockroom'); setIsCmdOpen(false); }});
+    });
+
+    inventory.forEach((item) => {
+      entries.push({
+        id: `inventory-${item.id}`,
+        type: 'inventory',
+        title: item.name,
+        subtitle: `${item.quantity} ${item.unit} • ${item.location}`,
+        keywords: [item.category, 'inventory', item.location],
+        action: () => {
+          setCurrentView('stockroom');
+          setStockroomPresetSearch(item.name);
+        },
       });
-      // Machines
-      machines.filter(m => m.name.toLowerCase().includes(q)).forEach(m => {
-          results.push({ type: 'Machine', label: m.name, desc: m.status, action: () => { setCurrentView('machines'); setIsCmdOpen(false); }});
+    });
+
+    machines.forEach((machine) => {
+      entries.push({
+        id: `machine-${machine.id}`,
+        type: 'machine',
+        title: machine.name,
+        subtitle: machine.status,
+        keywords: [machine.type, machine.notes || ''],
+        action: () => {
+          setCurrentView('machines');
+        },
       });
-      // Views
-      if('analytics'.includes(q)) results.push({ type: 'View', label: 'Analytics', desc: 'Dashboard', action: () => { setCurrentView('analytics'); setIsCmdOpen(false); }});
-      if('stockroom'.includes(q)) results.push({ type: 'View', label: 'Stockroom', desc: 'Inventory', action: () => { setCurrentView('stockroom'); setIsCmdOpen(false); }});
-      
-      return results;
-  };
+    });
+
+    vendors.forEach((vendor) => {
+      entries.push({
+        id: `vendor-${vendor.id}`,
+        type: 'vendor',
+        title: vendor.name,
+        subtitle: `${vendor.category} • ${vendor.leadTime || 'Lead time unknown'}`,
+        keywords: [vendor.website, vendor.notes || ''],
+        action: () => setCurrentView('supply'),
+      });
+    });
+
+    docs.forEach((doc) => {
+      entries.push({
+        id: `doc-${doc.id}`,
+        type: 'document',
+        title: doc.title,
+        subtitle: `${doc.type} • ${doc.tags.join(', ')}`,
+        keywords: doc.tags,
+        action: () => setCurrentView('library'),
+      });
+    });
+
+    const actionEntries: SearchEntry[] = [
+      {
+        id: 'action-create-project',
+        type: 'action',
+        title: 'Create new project',
+        subtitle: 'Initialize a pipeline record',
+        keywords: ['new', 'project', 'add'],
+        action: () => {
+          const name = prompt('Project designation:');
+          if (name) addProject(name);
+        },
+      },
+      {
+        id: 'action-create-inventory',
+        type: 'action',
+        title: 'Create inventory item',
+        subtitle: 'Seed a stock entry from the palette',
+        keywords: ['stock', 'inventory', 'add'],
+        action: () => {
+          const name = prompt('Inventory item name:');
+          if (!name) return;
+          const newItem: InventoryItem = {
+            id: Date.now().toString(),
+            name,
+            category: 'General',
+            quantity: 0,
+            unit: 'pcs',
+            location: 'Unassigned',
+            minLevel: 5,
+            cost: 0,
+            lastUpdated: Date.now(),
+          };
+          setInventory((prev) => [newItem, ...prev]);
+          setCurrentView('stockroom');
+        },
+      },
+      {
+        id: 'action-create-vendor',
+        type: 'action',
+        title: 'Register vendor',
+        subtitle: 'Capture a new supply partner',
+        keywords: ['vendor', 'supply', 'add'],
+        action: () => {
+          const name = prompt('Vendor name:');
+          if (!name) return;
+          const newVendor: Vendor = {
+            id: Date.now().toString(),
+            name,
+            website: 'vendor.example.com',
+            category: 'General',
+            rating: 3,
+            leadTime: 'Unknown',
+            notes: '',
+          };
+          setVendors((prev) => [newVendor, ...prev]);
+          setCurrentView('supply');
+        },
+      },
+      {
+        id: 'action-open-analytics',
+        type: 'action',
+        title: 'Open Analytics dashboard',
+        subtitle: 'Navigate to operational reporting',
+        keywords: ['analytics', 'dashboard', 'metrics'],
+        action: () => setCurrentView('analytics'),
+      },
+      {
+        id: 'action-open-system',
+        type: 'action',
+        title: 'Open System Core',
+        subtitle: 'Backup, security, and sync controls',
+        keywords: ['system', 'settings', 'backup'],
+        action: () => setCurrentView('system'),
+      },
+    ];
+
+    searchIndexRef.current.setEntries([...entries, ...actionEntries]);
+  }, [projects, inventory, machines, vendors, docs, addProject]);
 
   // --- RENDER HELPERS ---
   const filteredProjects = projects.filter(p => p.title.toLowerCase().includes(searchTerm.toLowerCase()));
   const selectedProject = projects.find(p => p.id === selectedProjectId);
-  const unreadCount = notifications.filter(n => !n.read).length;
-
-  const NavItem = ({ view, icon: Icon, label }: { view: ViewMode, icon: any, label: string }) => (
-      <button 
-        onClick={() => setCurrentView(view)}
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all mb-1 ${currentView === view ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}
-      >
-        <Icon size={16} />
-        <span className="font-medium text-sm">{label}</span>
-      </button>
-  );
 
   const Breadcrumbs = () => {
       if(selectedProject) return (
@@ -336,6 +547,42 @@ const App: React.FC = () => {
       );
   };
 
+  const trimmedCmdQuery = cmdQuery.trim();
+  const dynamicPaletteActions: SearchEntry[] = [];
+
+  if (trimmedCmdQuery) {
+    dynamicPaletteActions.push({
+      id: `action-filter-projects-${trimmedCmdQuery}`,
+      type: 'action',
+      title: `Filter projects by "${trimmedCmdQuery}"`,
+      subtitle: 'Apply text to project registry filter',
+      keywords: ['filter', 'projects', 'search'],
+      action: () => {
+        setCurrentView('dashboard');
+        setSearchTerm(trimmedCmdQuery);
+      },
+    });
+
+    dynamicPaletteActions.push({
+      id: `action-filter-stock-${trimmedCmdQuery}`,
+      type: 'action',
+      title: `Filter inventory by "${trimmedCmdQuery}"`,
+      subtitle: 'Open stockroom scoped to this query',
+      keywords: ['filter', 'inventory', 'stockroom'],
+      action: () => {
+        setCurrentView('stockroom');
+        setStockroomPresetSearch(trimmedCmdQuery);
+      },
+    });
+  }
+
+  const paletteResults = searchIndexRef.current.search(cmdQuery, dynamicPaletteActions);
+
+  const handleCommandSelect = (res: SearchEntry) => {
+    res.action?.();
+    setIsCmdOpen(false);
+  };
+
   // If detailed view
   if (selectedProject) {
       return (
@@ -348,36 +595,18 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-200 font-sans">
-      
-      {/* Sidebar */}
-      <aside className="w-64 bg-zinc-950 text-zinc-400 flex flex-col flex-shrink-0 border-r border-zinc-900">
-        <div className="p-6">
-          <h1 className="font-serif text-2xl text-zinc-100 font-bold tracking-tight">Construct OS</h1>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">System V2.0</p>
-          </div>
-        </div>
-
-        <nav className="flex-1 px-4 space-y-6 overflow-y-auto">
-            <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Registry</div>
-                <NavItem view="dashboard" icon={LayoutDashboard} label="Active Projects" />
-            </div>
-            
-            <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Resources</div>
-                <NavItem view="stockroom" icon={Package} label="Stockroom" />
-                <NavItem view="machines" icon={Settings} label="Machine Park" />
-                <NavItem view="supply" icon={Truck} label="Supply Chain" />
-                <NavItem view="library" icon={Book} label="Library" />
-            </div>
-            
-            <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Operations</div>
-                <NavItem view="analytics" icon={BarChart3} label="Analytics" />
-                <NavItem view="system" icon={Database} label="System Core" />
+    <ResponsiveLayout
+        navGroups={navGroups}
+        breadcrumbs={<Breadcrumbs />}
+        onOpenCommand={() => setIsCmdOpen(true)}
+        headerActions={(
+            <div className="relative">
+                <Bell size={16} className="text-zinc-500 hover:text-zinc-300 cursor-pointer transition-colors" />
+                {unreadCount > 0 && (
+                    <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 bg-red-500 text-[10px] font-bold text-white rounded-full flex items-center justify-center">
+                        {unreadCount}
+                    </span>
+                )}
             </div>
         </nav>
         
@@ -399,124 +628,107 @@ const App: React.FC = () => {
         {/* Header */}
         <header className="h-14 border-b border-zinc-900 bg-zinc-950 flex items-center justify-between px-6 flex-shrink-0">
              <Breadcrumbs />
-             
-                 <div className="flex items-center gap-4">
-                 <button 
-                    onClick={() => setIsCmdOpen(true)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded border border-zinc-800 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 transition-all"
-                 >
-                     <Command size={12} />
-                     <span>Search...</span>
-                     <span className="ml-2 bg-zinc-800 px-1 rounded text-[10px]">⌘K</span>
-                 </button>
 
-                <div className="relative">
-                    <Bell size={16} className="text-zinc-500 hover:text-zinc-300 cursor-pointer transition-colors" />
-                    {unreadCount > 0 && (
-                        <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 bg-red-500 text-[10px] font-bold text-white rounded-full flex items-center justify-center">
-                            {unreadCount}
-                        </span>
-                    )}
-                </div>
-             </div>
+             <Stack direction="row" spacing={1.5} alignItems="center">
+                <Button
+                  variant="outlined"
+                  size={density === 'compact' ? 'small' : 'medium'}
+                  onClick={() => setIsCmdOpen(true)}
+                  startIcon={<Command size={14} />}
+                  sx={{ borderColor: 'divider', color: 'text.secondary' }}
+                >
+                  <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+                    Search...
+                  </Typography>
+                  <MuiBox
+                    component="span"
+                    sx={{
+                      fontSize: 10,
+                      bgcolor: 'action.hover',
+                      px: 0.75,
+                      py: 0.25,
+                      borderRadius: 1,
+                      ml: 1,
+                      display: { xs: 'none', md: 'inline-flex' },
+                    }}
+                  >
+                    ⌘K
+                  </MuiBox>
+                </Button>
+                <IconButton color="inherit" aria-label="notifications">
+                  <Badge badgeContent={unreadCount} color="error" overlap="circular">
+                    <Bell size={18} />
+                  </Badge>
+                </IconButton>
+                <SettingsMenu />
+             </Stack>
         </header>
 
-        {/* Global Command Palette Modal */}
-        {isCmdOpen && (
-            <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-32 animate-in fade-in duration-200">
-                <div className="bg-zinc-900 w-[600px] rounded-xl border border-zinc-700 shadow-2xl overflow-hidden flex flex-col">
-                    <div className="p-4 border-b border-zinc-800 flex items-center gap-3">
-                        <Search className="text-zinc-400" size={20} />
-                        <input 
-                            ref={cmdInputRef}
-                            value={cmdQuery}
-                            onChange={(e) => setCmdQuery(e.target.value)}
-                            placeholder="Type a command or search..."
-                            className="bg-transparent text-lg text-zinc-100 focus:outline-none flex-1 font-sans"
-                        />
-                        <button onClick={() => setIsCmdOpen(false)} className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">ESC</button>
-                    </div>
-                    <div className="max-h-96 overflow-y-auto p-2">
-                        {commandResults().length === 0 ? (
-                            <div className="text-center py-8 text-zinc-500 text-sm">No results found.</div>
-                        ) : (
-                            commandResults().map((res, i) => (
-                                <button 
-                                    key={i} 
-                                    onClick={res.action}
-                                    className="w-full text-left p-3 hover:bg-zinc-800 rounded-lg flex items-center justify-between group"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
-                                            res.type === 'Project' ? 'bg-blue-900/30 text-blue-400' : 
-                                            res.type === 'Stock' ? 'bg-green-900/30 text-green-400' :
-                                            res.type === 'Machine' ? 'bg-amber-900/30 text-amber-400' :
-                                            'bg-zinc-800 text-zinc-400'
-                                        }`}>{res.type}</span>
-                                        <span className="text-zinc-200 font-medium">{res.label}</span>
-                                    </div>
-                                    <span className="text-xs text-zinc-500 group-hover:text-zinc-400">{res.desc}</span>
-                                </button>
-                            ))
-                        )}
-                    </div>
-                </div>
-                <div className="absolute inset-0 -z-10" onClick={() => setIsCmdOpen(false)}></div>
-            </div>
-        )}
+        <CommandPalette
+          isOpen={isCmdOpen}
+          query={cmdQuery}
+          results={paletteResults}
+          onClose={() => setIsCmdOpen(false)}
+          onQueryChange={setCmdQuery}
+          onSelect={handleCommandSelect}
+        />
 
-        {/* Content Views */}
-        <div className="flex-1 overflow-hidden relative">
-            {currentView === 'dashboard' && (
-                <div className="flex-1 h-full overflow-y-auto p-8 bg-zinc-950">
-                     <div className="flex justify-between items-end mb-8">
-                        <div>
-                            <h2 className="text-2xl font-serif font-bold text-zinc-100">Project Registry</h2>
-                            <p className="text-zinc-500 text-sm mt-1">Active pipelines and engineering status.</p>
+        {currentView === 'dashboard' && (
+            <div className="flex-1 h-full overflow-y-auto p-8 bg-zinc-950">
+                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between mb-8">
+                    <div>
+                        <h2 className="text-2xl font-serif font-bold text-zinc-100">Project Registry</h2>
+                        <p className="text-zinc-500 text-sm mt-1">Active pipelines and engineering status.</p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                         <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" size={14} />
+                            <input
+                                type="text"
+                                placeholder="Filter projects..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-9 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-600 w-full sm:w-64 text-zinc-200"
+                            />
                         </div>
-                        <div className="flex gap-4">
-                             <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" size={14} />
-                                <input 
-                                    type="text" 
-                                    placeholder="Filter projects..." 
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="pl-9 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-600 w-64 text-zinc-200"
+                        <button
+                            onClick={() => { const t = prompt("Project Designation:"); if(t) addProject(t); }}
+                            className="bg-zinc-100 text-zinc-900 px-4 py-2 rounded-md text-xs font-bold hover:bg-white flex items-center gap-2 uppercase tracking-wide transition-colors"
+                        >
+                            <Plus size={14} /> Initialize Project
+                        </button>
+                    </div>
+                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {filteredProjects.length === 0 ? (
+                        <div className="col-span-full flex flex-col items-center justify-center text-zinc-700 py-20 border border-dashed border-zinc-800 rounded-xl">
+                            <Box size={48} className="mb-4 opacity-20" />
+                            <p className="font-mono text-sm">REGISTRY EMPTY</p>
+                        </div>
+                    ) : (
+                        filteredProjects.map(project => (
+                            <div key={project.id} onClick={() => setSelectedProjectId(project.id)} className="cursor-pointer h-full">
+                                <ProjectCard
+                                    project={project}
+                                    onStatusChange={(id, status) => setProjects(p => p.map(pr => pr.id === id ? { ...pr, status } : pr))}
+                                    onDelete={deleteProject}
                                 />
                             </div>
-                            <button 
-                                onClick={() => { const t = prompt("Project Designation:"); if(t) addProject(t); }}
-                                className="bg-zinc-100 text-zinc-900 px-4 py-2 rounded-md text-xs font-bold hover:bg-white flex items-center gap-2 uppercase tracking-wide transition-colors"
-                            >
-                                <Plus size={14} /> Initialize Project
-                            </button>
-                        </div>
-                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {filteredProjects.length === 0 ? (
-                            <div className="col-span-full flex flex-col items-center justify-center text-zinc-700 py-20 border border-dashed border-zinc-800 rounded-xl">
-                                <Box size={48} className="mb-4 opacity-20" />
-                                <p className="font-mono text-sm">REGISTRY EMPTY</p>
-                            </div>
-                        ) : (
-                            filteredProjects.map(project => (
-                                <div key={project.id} onClick={() => setSelectedProjectId(project.id)} className="cursor-pointer h-full">
-                                    <ProjectCard 
-                                        project={project} 
-                                        onStatusChange={(id, status) => setProjects(p => p.map(pr => pr.id === id ? { ...pr, status } : pr))}
-                                        onDelete={deleteProject}
-                                    />
-                                </div>
-                            ))
-                        )}
-                    </div>
+                        ))
+                    )}
                 </div>
             )}
 
-            {currentView === 'stockroom' && <Stockroom items={inventory} onUpdate={setInventory} docs={docs} onDocsUpdate={setDocs} />}
-            {currentView === 'machines' && <MachinePark machines={machines} onUpdate={setMachines} docs={docs} onDocsUpdate={setDocs} />}
+            {currentView === 'stockroom' && (
+              <Stockroom
+                items={inventory}
+                onUpdate={setInventory}
+                presetSearch={stockroomPresetSearch ?? undefined}
+                onClearPresetSearch={clearStockroomPreset}
+              />
+            )}
+            {currentView === 'machines' && <MachinePark machines={machines} onUpdate={setMachines} />}
             {currentView === 'supply' && <SupplyChain vendors={vendors} onUpdate={setVendors} />}
             {currentView === 'library' && <Library docs={docs} onUpdate={setDocs} inventory={inventory} machines={machines} />}
             {currentView === 'analytics' && <Analytics projects={projects} inventory={inventory} machines={machines} />}
@@ -528,6 +740,14 @@ const App: React.FC = () => {
                     onUpdateSecurity={updateSecuritySettings}
                     onSync={manualCloudSync}
                     syncStatus={syncStatus}
+                    preferences={preferences}
+                    onUpdatePreferences={updatePreferences}
+                    backupSettings={backupSettings}
+                    onUpdateBackupSettings={updateBackupSettings}
+                    backups={backups}
+                    onCreateBackup={createBackup}
+                    onRestoreBackup={restoreBackup}
+                    onDeleteBackup={deleteBackup}
                 />
             )}
         </div>
