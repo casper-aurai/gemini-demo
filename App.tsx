@@ -32,6 +32,7 @@ const App: React.FC = () => {
   
   // Mobile & UI State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false); // New state for mobile sidebar
   const [isCmdOpen, setIsCmdOpen] = useState(false);
   const [cmdQuery, setCmdQuery] = useState('');
   const cmdInputRef = useRef<HTMLInputElement>(null);
@@ -53,6 +54,49 @@ const App: React.FC = () => {
         },
         {
             id: '2', title: 'Hydraulic Log Splitter', description: '20-ton cylinder force. 6.5HP gas engine.', status: 'fabrication', createdAt: Date.now() - 10000000, imageUrl: 'https://picsum.photos/seed/hydro/800/600', bom: [], tasks: [], chatHistory: []
+        },
+        {
+            id: '3',
+            title: 'Project Homebase',
+            description: 'Wall-mounted tactical command deck. Integrating x86/ARM/RISC-V nodes with telemetry. Centralized KVM & power management for heterogeneous compute cluster.',
+            status: 'prototyping',
+            createdAt: Date.now() - 500000,
+            imageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=80&w=800',
+            bom: [
+                // Core Compute
+                { category: 'Compute', itemName: 'MacBook Pro', quantity: 1, specifications: 'M3 Pro, 14-inch, 1TB SSD', unitCost: 2399.00, notes: 'Primary Workstation' },
+                { category: 'Compute', itemName: 'Desktop Workstation', quantity: 1, specifications: 'GTX 1080 Ti, Ryzen 7, Custom Loop', unitCost: 1450.00, notes: 'Legacy GPU Compute Node' },
+                { category: 'Compute', itemName: 'Banana Pi Pro', quantity: 1, specifications: 'ARMv7, SATA Interface', unitCost: 48.00, notes: 'NAS Controller' },
+                
+                // Tactical / Cyber
+                { category: 'Cyber', itemName: 'WiFi Pineapple', quantity: 1, specifications: 'Mark II (Legacy) / Tetra', unitCost: 99.00, notes: 'Audit hardware' },
+                { category: 'Cyber', itemName: 'M5 Cardputer', quantity: 1, specifications: 'ESP32-S3, Keyboard Stamp', unitCost: 29.95, notes: 'Portable console' },
+                { category: 'Cyber', itemName: 'Samsung S9', quantity: 1, specifications: 'Kali NetHunter (Rooted)', unitCost: 120.00, notes: 'Packet injection interface' },
+                
+                // Peripherals & IO
+                { category: 'IO', itemName: 'Garmin Forerunner', quantity: 1, specifications: 'Model 165, Bio-Telemetry', unitCost: 249.99, notes: 'Health stream integration' },
+                { category: 'IO', itemName: 'Lenovo Tablet', quantity: 1, specifications: 'Tab M10 Plus, Android', unitCost: 170.00, notes: 'Dedicated HomeAssistant Dashboard' },
+                
+                // Structural
+                { category: 'Structure', itemName: 'Baltic Birch Plywood', quantity: 1, specifications: '18mm, 4x8 Sheet, Grade BB/BB', unitCost: 115.00, notes: 'Backboard material' },
+                { category: 'Mounting', itemName: 'DIN Rails', quantity: 6, specifications: 'Steel, Slotted, 1m', unitCost: 8.50 },
+                { category: 'Mounting', itemName: '3D Printed Brackets', quantity: 12, specifications: 'PETG Carbon Fiber', unitCost: 2.50, notes: 'Custom CAD' },
+                { category: 'Mounting', itemName: 'VESA Mounts', quantity: 3, specifications: '100x100, Articulating', unitCost: 25.00 },
+                
+                // Connectivity
+                { category: 'Network', itemName: 'Managed Switch', quantity: 1, specifications: '8-Port Gigabit PoE+', unitCost: 110.00 },
+                { category: 'Power', itemName: 'UPS Unit', quantity: 1, specifications: '1500VA Pure Sine Wave', unitCost: 210.00 }
+            ],
+            tasks: [
+                { id: '301', text: 'Draft Backboard Layout in CAD', status: 'done' },
+                { id: '302', text: 'Flash NetHunter Kernel to S9', status: 'done' },
+                { id: '303', text: 'Compile Drivers for Wifi Pineapple', status: 'in_progress' },
+                { id: '304', text: 'Design DIN Mount for M5 Cardputer', status: 'in_progress' },
+                { id: '305', text: 'Route Power Cables (Hidden Channel)', status: 'pending' },
+                { id: '306', text: 'Configure Grafana Dashboard on Lenovo Tablet', status: 'pending' },
+                { id: '307', text: 'Fabricate GPU Support Bracket', status: 'pending' }
+            ],
+            chatHistory: []
         }
     ]);
 
@@ -213,7 +257,7 @@ const App: React.FC = () => {
 
   const NavItem = ({ view, icon: Icon, label }: { view: ViewMode, icon: any, label: string }) => (
       <button 
-        onClick={() => { setCurrentView(view); setIsMobileMenuOpen(false); }}
+        onClick={() => { setCurrentView(view); setIsMobileSidebarOpen(false); }}
         className={`w-full flex items-center gap-3 px-3 py-3 md:py-2 rounded-md transition-all mb-1 ${currentView === view ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'} active:scale-95 duration-75`}
       >
         <Icon size={18} />
@@ -266,7 +310,7 @@ const App: React.FC = () => {
       {/* Mobile Header */}
       <div className="md:hidden h-14 bg-zinc-950 border-b border-zinc-900 flex items-center justify-between px-4 z-50 relative flex-shrink-0">
           <div className="flex items-center gap-3">
-              <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 -ml-2 text-zinc-400">
+              <button onClick={() => setIsMobileSidebarOpen(true)} className="p-2 -ml-2 text-zinc-400">
                   <Menu size={20} />
               </button>
               <span className="font-serif font-bold text-zinc-100">Construct OS</span>
@@ -285,10 +329,10 @@ const App: React.FC = () => {
       {/* Sidebar Navigation (Desktop: Fixed, Mobile: Overlay) */}
       <>
         {/* Mobile Overlay Backdrop */}
-        {isMobileMenuOpen && (
+        {isMobileSidebarOpen && (
             <div 
                 className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm animate-in fade-in duration-200"
-                onClick={() => setIsMobileMenuOpen(false)}
+                onClick={() => setIsMobileSidebarOpen(false)}
             />
         )}
         
@@ -296,7 +340,7 @@ const App: React.FC = () => {
         <aside className={`
             fixed inset-y-0 left-0 z-50 w-72 bg-zinc-950 border-r border-zinc-900 flex flex-col transition-transform duration-300
             md:relative md:translate-x-0 md:w-64 flex-shrink-0
-            ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+            ${isMobileSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
         `}>
             <div className="p-6 flex justify-between items-start">
             <div>
@@ -307,7 +351,7 @@ const App: React.FC = () => {
                 </div>
             </div>
             {/* Close button for mobile */}
-            <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden text-zinc-500 p-1">
+            <button onClick={() => setIsMobileSidebarOpen(false)} className="md:hidden text-zinc-500 p-1">
                 <X size={20} />
             </button>
             </div>
