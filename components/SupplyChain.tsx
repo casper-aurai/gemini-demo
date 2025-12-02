@@ -36,21 +36,21 @@ const SupplyChain: React.FC<SupplyChainProps> = ({ vendors, onUpdate }) => {
     };
 
     return (
-        <div className="p-8 h-full bg-zinc-50 flex flex-col">
+        <div className="p-4 md:p-8 h-full bg-zinc-50 flex flex-col">
             <header className="flex justify-between items-center mb-6">
                 <div>
-                    <h2 className="font-serif text-2xl font-bold text-zinc-900 flex items-center gap-2">
+                    <h2 className="font-serif text-xl md:text-2xl font-bold text-zinc-900 flex items-center gap-2">
                         <Truck /> Supply Chain
                     </h2>
                     <p className="text-zinc-500 text-sm">Vendor registry, procurement metrics, and ratings.</p>
                 </div>
                 <button onClick={addVendor} className="bg-zinc-900 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-zinc-800 shadow-sm">
-                    <Plus size={16}/> Add Vendor
+                    <Plus size={16}/> <span className="hidden sm:inline">Add Vendor</span><span className="sm:hidden">Add</span>
                 </button>
             </header>
 
-            <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden shadow-sm">
-                <table className="w-full text-sm text-left">
+            <div className="bg-white md:bg-white rounded-lg md:border border-zinc-200 overflow-hidden shadow-sm flex flex-col md:block bg-transparent border-none shadow-none gap-4">
+                <table className="w-full text-sm text-left hidden md:table">
                     <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[10px] tracking-wider">
                         <tr>
                             <th className="px-6 py-3 w-[25%]">Vendor</th>
@@ -143,6 +143,66 @@ const SupplyChain: React.FC<SupplyChainProps> = ({ vendors, onUpdate }) => {
                         ))}
                     </tbody>
                 </table>
+
+                {/* Mobile Card View */}
+                <div className="md:hidden space-y-4">
+                     {vendors.map(vendor => (
+                         <div key={vendor.id} className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm flex flex-col gap-3">
+                             <div className="flex justify-between items-start">
+                                 <div>
+                                     <input 
+                                        value={vendor.name}
+                                        onChange={e => updateVendor(vendor.id, { name: e.target.value })}
+                                        className="font-bold text-lg text-zinc-900 bg-transparent focus:bg-zinc-50 rounded px-1 w-full"
+                                    />
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-[10px] font-bold uppercase bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded">
+                                            {vendor.category}
+                                        </span>
+                                        <div className="flex text-amber-400 gap-0.5">
+                                            {[1,2,3,4,5].map(star => (
+                                                <Star 
+                                                    key={star} 
+                                                    size={10} 
+                                                    fill={star <= vendor.rating ? "currentColor" : "none"} 
+                                                    onClick={() => updateVendor(vendor.id, { rating: star })}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                 </div>
+                                 <button onClick={() => deleteVendor(vendor.id)} className="text-zinc-300 p-2">
+                                    <Trash2 size={16} />
+                                 </button>
+                             </div>
+                             
+                             <div className="grid grid-cols-2 gap-2 text-xs">
+                                 <div className="bg-zinc-50 p-2 rounded">
+                                     <div className="text-zinc-400 mb-1">Lead Time</div>
+                                     <input 
+                                        value={vendor.leadTime || ''}
+                                        onChange={e => updateVendor(vendor.id, { leadTime: e.target.value })}
+                                        className="bg-transparent font-medium w-full"
+                                        placeholder="Unknown"
+                                    />
+                                 </div>
+                                 <div className="bg-zinc-50 p-2 rounded">
+                                     <div className="text-zinc-400 mb-1">Last Order</div>
+                                     <div className="font-mono">
+                                         {vendor.lastOrder ? new Date(vendor.lastOrder).toLocaleDateString() : 'Never'}
+                                     </div>
+                                 </div>
+                             </div>
+
+                             <input 
+                                value={vendor.notes || ''}
+                                onChange={e => updateVendor(vendor.id, { notes: e.target.value })}
+                                className="text-zinc-500 italic bg-transparent border-t border-zinc-100 pt-2 w-full text-xs"
+                                placeholder="Add specific notes..."
+                            />
+                         </div>
+                     ))}
+                </div>
             </div>
         </div>
     );

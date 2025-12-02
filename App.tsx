@@ -13,7 +13,7 @@ import SystemCore from './components/SystemCore';
 import { 
     LayoutDashboard, Plus, Search, Activity, Box, Package, Settings, 
     Book, Truck, BarChart3, Database, Bell, ChevronRight, Command, 
-    Layers, AlertCircle 
+    Layers, AlertCircle, Menu, X, LogOut
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -30,7 +30,8 @@ const App: React.FC = () => {
   
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Command Palette State
+  // Mobile & UI State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isCmdOpen, setIsCmdOpen] = useState(false);
   const [cmdQuery, setCmdQuery] = useState('');
   const cmdInputRef = useRef<HTMLInputElement>(null);
@@ -212,20 +213,20 @@ const App: React.FC = () => {
 
   const NavItem = ({ view, icon: Icon, label }: { view: ViewMode, icon: any, label: string }) => (
       <button 
-        onClick={() => setCurrentView(view)}
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all mb-1 ${currentView === view ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}
+        onClick={() => { setCurrentView(view); setIsMobileMenuOpen(false); }}
+        className={`w-full flex items-center gap-3 px-3 py-3 md:py-2 rounded-md transition-all mb-1 ${currentView === view ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'} active:scale-95 duration-75`}
       >
-        <Icon size={16} />
-        <span className="font-medium text-sm">{label}</span>
+        <Icon size={18} />
+        <span className="font-medium text-sm md:text-xs lg:text-sm">{label}</span>
       </button>
   );
 
   const Breadcrumbs = () => {
       if(selectedProject) return (
-          <div className="flex items-center text-xs font-mono text-zinc-500 gap-2">
-              <span>Main Registry</span>
-              <ChevronRight size={12} />
-              <span className="text-zinc-300">{selectedProject.title}</span>
+          <div className="flex items-center text-xs font-mono text-zinc-500 gap-2 overflow-hidden whitespace-nowrap">
+              <span className="hidden sm:inline">Main Registry</span>
+              <ChevronRight size={12} className="hidden sm:inline" />
+              <span className="text-zinc-300 truncate">{selectedProject.title}</span>
           </div>
       );
       
@@ -240,10 +241,10 @@ const App: React.FC = () => {
       };
 
       return (
-          <div className="flex items-center text-xs font-mono text-zinc-500 gap-2">
-             <span>Construct OS</span>
-             <ChevronRight size={12} />
-             <span className="text-zinc-300">{labels[currentView]}</span>
+          <div className="flex items-center text-xs font-mono text-zinc-500 gap-2 overflow-hidden whitespace-nowrap">
+             <span className="hidden sm:inline">Construct OS</span>
+             <ChevronRight size={12} className="hidden sm:inline" />
+             <span className="text-zinc-300 truncate">{labels[currentView]}</span>
           </div>
       );
   };
@@ -260,56 +261,97 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-200 font-sans">
+    <div className="flex flex-col md:flex-row h-screen bg-zinc-950 text-zinc-200 font-sans overflow-hidden">
       
-      {/* Sidebar */}
-      <aside className="w-64 bg-zinc-950 text-zinc-400 flex flex-col flex-shrink-0 border-r border-zinc-900">
-        <div className="p-6">
-          <h1 className="font-serif text-2xl text-zinc-100 font-bold tracking-tight">Construct OS</h1>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">System V2.0</p>
+      {/* Mobile Header */}
+      <div className="md:hidden h-14 bg-zinc-950 border-b border-zinc-900 flex items-center justify-between px-4 z-50 relative flex-shrink-0">
+          <div className="flex items-center gap-3">
+              <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 -ml-2 text-zinc-400">
+                  <Menu size={20} />
+              </button>
+              <span className="font-serif font-bold text-zinc-100">Construct OS</span>
           </div>
-        </div>
+          <div className="flex items-center gap-3">
+               <button onClick={() => setIsCmdOpen(true)} className="p-2 text-zinc-400">
+                  <Search size={20} />
+              </button>
+              <div className="relative">
+                  {notifications.length > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
+                  <Bell size={20} className="text-zinc-500" />
+              </div>
+          </div>
+      </div>
 
-        <nav className="flex-1 px-4 space-y-6 overflow-y-auto">
-            <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Registry</div>
-                <NavItem view="dashboard" icon={LayoutDashboard} label="Active Projects" />
-            </div>
-            
-            <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Resources</div>
-                <NavItem view="stockroom" icon={Package} label="Stockroom" />
-                <NavItem view="machines" icon={Settings} label="Machine Park" />
-                <NavItem view="supply" icon={Truck} label="Supply Chain" />
-                <NavItem view="library" icon={Book} label="Library" />
-            </div>
-            
-            <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Operations</div>
-                <NavItem view="analytics" icon={BarChart3} label="Analytics" />
-                <NavItem view="system" icon={Database} label="System Core" />
-            </div>
-        </nav>
+      {/* Sidebar Navigation (Desktop: Fixed, Mobile: Overlay) */}
+      <>
+        {/* Mobile Overlay Backdrop */}
+        {isMobileMenuOpen && (
+            <div 
+                className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm animate-in fade-in duration-200"
+                onClick={() => setIsMobileMenuOpen(false)}
+            />
+        )}
         
-        {/* User Profile / Quick Settings */}
-        <div className="p-4 border-t border-zinc-900">
-            <button className="flex items-center gap-3 w-full p-2 hover:bg-zinc-900 rounded-md transition-colors">
-                <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-xs border border-zinc-700">JS</div>
-                <div className="text-left">
-                    <div className="text-xs font-bold text-zinc-300">Jane Smith</div>
-                    <div className="text-[10px] text-zinc-600">Lead Engineer</div>
+        {/* The Sidebar Itself */}
+        <aside className={`
+            fixed inset-y-0 left-0 z-50 w-72 bg-zinc-950 border-r border-zinc-900 flex flex-col transition-transform duration-300
+            md:relative md:translate-x-0 md:w-64 flex-shrink-0
+            ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+        `}>
+            <div className="p-6 flex justify-between items-start">
+            <div>
+                <h1 className="font-serif text-2xl text-zinc-100 font-bold tracking-tight">Construct OS</h1>
+                <div className="flex items-center gap-2 mt-2">
+                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">System V2.0</p>
                 </div>
+            </div>
+            {/* Close button for mobile */}
+            <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden text-zinc-500 p-1">
+                <X size={20} />
             </button>
-        </div>
-      </aside>
+            </div>
+
+            <nav className="flex-1 px-4 space-y-6 overflow-y-auto">
+                <div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Registry</div>
+                    <NavItem view="dashboard" icon={LayoutDashboard} label="Active Projects" />
+                </div>
+                
+                <div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Resources</div>
+                    <NavItem view="stockroom" icon={Package} label="Stockroom" />
+                    <NavItem view="machines" icon={Settings} label="Machine Park" />
+                    <NavItem view="supply" icon={Truck} label="Supply Chain" />
+                    <NavItem view="library" icon={Book} label="Library" />
+                </div>
+                
+                <div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Operations</div>
+                    <NavItem view="analytics" icon={BarChart3} label="Analytics" />
+                    <NavItem view="system" icon={Database} label="System Core" />
+                </div>
+            </nav>
+            
+            {/* User Profile / Quick Settings */}
+            <div className="p-4 border-t border-zinc-900">
+                <button className="flex items-center gap-3 w-full p-2 hover:bg-zinc-900 rounded-md transition-colors">
+                    <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-xs border border-zinc-700">JS</div>
+                    <div className="text-left">
+                        <div className="text-xs font-bold text-zinc-300">Jane Smith</div>
+                        <div className="text-[10px] text-zinc-600">Lead Engineer</div>
+                    </div>
+                    <LogOut size={14} className="ml-auto text-zinc-600" />
+                </button>
+            </div>
+        </aside>
+      </>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden h-screen bg-zinc-950 relative">
+      <main className="flex-1 flex flex-col overflow-hidden h-[calc(100vh-3.5rem)] md:h-screen bg-zinc-950 relative w-full">
         
-        {/* Header */}
-        <header className="h-14 border-b border-zinc-900 bg-zinc-950 flex items-center justify-between px-6 flex-shrink-0">
+        {/* Desktop Header */}
+        <header className="hidden md:flex h-14 border-b border-zinc-900 bg-zinc-950 items-center justify-between px-6 flex-shrink-0">
              <Breadcrumbs />
              
              <div className="flex items-center gap-4">
@@ -356,8 +398,8 @@ const App: React.FC = () => {
 
         {/* Global Command Palette Modal */}
         {isCmdOpen && (
-            <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-32 animate-in fade-in duration-200">
-                <div className="bg-zinc-900 w-[600px] rounded-xl border border-zinc-700 shadow-2xl overflow-hidden flex flex-col">
+            <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-20 md:pt-32 animate-in fade-in duration-200 p-4">
+                <div className="bg-zinc-900 w-full max-w-xl rounded-xl border border-zinc-700 shadow-2xl overflow-hidden flex flex-col max-h-[60vh]">
                     <div className="p-4 border-b border-zinc-800 flex items-center gap-3">
                         <Search className="text-zinc-400" size={20} />
                         <input 
@@ -365,11 +407,11 @@ const App: React.FC = () => {
                             value={cmdQuery}
                             onChange={(e) => setCmdQuery(e.target.value)}
                             placeholder="Type a command or search..."
-                            className="bg-transparent text-lg text-zinc-100 focus:outline-none flex-1 font-sans"
+                            className="bg-transparent text-lg text-zinc-100 focus:outline-none flex-1 font-sans placeholder:text-zinc-600"
                         />
                         <button onClick={() => setIsCmdOpen(false)} className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">ESC</button>
                     </div>
-                    <div className="max-h-96 overflow-y-auto p-2">
+                    <div className="flex-1 overflow-y-auto p-2">
                         {commandResults().length === 0 ? (
                             <div className="text-center py-8 text-zinc-500 text-sm">No results found.</div>
                         ) : (
@@ -377,18 +419,18 @@ const App: React.FC = () => {
                                 <button 
                                     key={i} 
                                     onClick={res.action}
-                                    className="w-full text-left p-3 hover:bg-zinc-800 rounded-lg flex items-center justify-between group"
+                                    className="w-full text-left p-3 hover:bg-zinc-800 rounded-lg flex items-center justify-between group active:scale-[0.98] transition-transform"
                                 >
-                                    <div className="flex items-center gap-3">
-                                        <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
+                                    <div className="flex items-center gap-3 overflow-hidden">
+                                        <span className={`flex-shrink-0 text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
                                             res.type === 'Project' ? 'bg-blue-900/30 text-blue-400' : 
                                             res.type === 'Stock' ? 'bg-green-900/30 text-green-400' :
                                             res.type === 'Machine' ? 'bg-amber-900/30 text-amber-400' :
                                             'bg-zinc-800 text-zinc-400'
                                         }`}>{res.type}</span>
-                                        <span className="text-zinc-200 font-medium">{res.label}</span>
+                                        <span className="text-zinc-200 font-medium truncate">{res.label}</span>
                                     </div>
-                                    <span className="text-xs text-zinc-500 group-hover:text-zinc-400">{res.desc}</span>
+                                    <span className="text-xs text-zinc-500 group-hover:text-zinc-400 flex-shrink-0 ml-2">{res.desc}</span>
                                 </button>
                             ))
                         )}
@@ -399,35 +441,35 @@ const App: React.FC = () => {
         )}
 
         {/* Content Views */}
-        <div className="flex-1 overflow-hidden relative">
+        <div className="flex-1 overflow-hidden relative w-full">
             {currentView === 'dashboard' && (
-                <div className="flex-1 h-full overflow-y-auto p-8 bg-zinc-950">
-                     <div className="flex justify-between items-end mb-8">
+                <div className="flex-1 h-full overflow-y-auto p-4 md:p-8 bg-zinc-950">
+                     <div className="flex flex-col md:flex-row md:justify-between md:items-end mb-6 md:mb-8 gap-4">
                         <div>
-                            <h2 className="text-2xl font-serif font-bold text-zinc-100">Project Registry</h2>
+                            <h2 className="text-xl md:text-2xl font-serif font-bold text-zinc-100">Project Registry</h2>
                             <p className="text-zinc-500 text-sm mt-1">Active pipelines and engineering status.</p>
                         </div>
-                        <div className="flex gap-4">
-                             <div className="relative">
+                        <div className="flex gap-2 md:gap-4 w-full md:w-auto">
+                             <div className="relative flex-1 md:flex-none">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" size={14} />
                                 <input 
                                     type="text" 
-                                    placeholder="Filter projects..." 
+                                    placeholder="Filter..." 
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="pl-9 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-600 w-64 text-zinc-200"
+                                    className="w-full md:w-64 pl-9 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-600 text-zinc-200"
                                 />
                             </div>
                             <button 
                                 onClick={() => { const t = prompt("Project Designation:"); if(t) addProject(t); }}
-                                className="bg-zinc-100 text-zinc-900 px-4 py-2 rounded-md text-xs font-bold hover:bg-white flex items-center gap-2 uppercase tracking-wide transition-colors"
+                                className="bg-zinc-100 text-zinc-900 px-4 py-2 rounded-md text-xs font-bold hover:bg-white flex items-center gap-2 uppercase tracking-wide transition-colors whitespace-nowrap active:scale-95"
                             >
-                                <Plus size={14} /> Initialize Project
+                                <Plus size={14} /> <span className="hidden sm:inline">Initialize Project</span><span className="sm:hidden">New</span>
                             </button>
                         </div>
                      </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 pb-20 md:pb-0">
                         {filteredProjects.length === 0 ? (
                             <div className="col-span-full flex flex-col items-center justify-center text-zinc-700 py-20 border border-dashed border-zinc-800 rounded-xl">
                                 <Box size={48} className="mb-4 opacity-20" />
@@ -435,7 +477,7 @@ const App: React.FC = () => {
                             </div>
                         ) : (
                             filteredProjects.map(project => (
-                                <div key={project.id} onClick={() => setSelectedProjectId(project.id)} className="cursor-pointer h-full">
+                                <div key={project.id} onClick={() => setSelectedProjectId(project.id)} className="cursor-pointer h-full active:scale-[0.98] transition-transform">
                                     <ProjectCard 
                                         project={project} 
                                         onStatusChange={(id, status) => setProjects(p => p.map(pr => pr.id === id ? { ...pr, status } : pr))}
