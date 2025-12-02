@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Project, ProjectStatus, InventoryItem, Machine, Vendor, ReferenceDoc, ViewMode, Notification, SecuritySettings } from './types';
+import { Project, ProjectStatus, InventoryItem, Machine, Vendor, ReferenceDoc, ViewMode, Notification, SecuritySettings, UserPreferences, BackupSettings } from './types';
 import ProjectCard from './components/ProjectCard';
 import ProjectDetail from './components/ProjectDetail';
 import Stockroom from './components/Stockroom';
@@ -48,20 +48,57 @@ const App: React.FC = () => {
             return {
                 passphrase: parsed.passphrase || 'construct-os-local',
                 cloudEnabled: Boolean(parsed.cloudEnabled),
-                cloudEndpoint: parsed.cloudEndpoint || 'http://localhost:4000/snapshot'
+                cloudEndpoint: parsed.cloudEndpoint || 'http://localhost:4000/snapshot',
+                encryptCloudPayloads: parsed.encryptCloudPayloads ?? true,
             };
         } catch (err) {
             console.warn('Failed to parse security settings', err);
         }
     }
-    return { passphrase: 'construct-os-local', cloudEnabled: false, cloudEndpoint: 'http://localhost:4000/snapshot' };
+    return { passphrase: 'construct-os-local', cloudEnabled: false, cloudEndpoint: 'http://localhost:4000/snapshot', encryptCloudPayloads: true };
+  };
+
+  const loadPreferences = (): UserPreferences => {
+    const raw = localStorage.getItem('construct_os_preferences');
+    if (raw) {
+        try {
+            return JSON.parse(raw) as UserPreferences;
+        } catch (err) {
+            console.warn('Failed to parse preferences', err);
+        }
+    }
+
+    return {
+        appearance: { theme: 'dark', density: 'comfortable' },
+        localization: {
+            language: navigator.language || 'en',
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        },
+        notifications: { alerts: true, maintenance: true, digest: false },
+    };
+  };
+
+  const loadBackupSettings = (): BackupSettings => {
+    const raw = localStorage.getItem('construct_os_backup_settings');
+    if (raw) {
+        try {
+            return JSON.parse(raw) as BackupSettings;
+        } catch (err) {
+            console.warn('Failed to parse backup settings', err);
+        }
+    }
+    return { intervalMinutes: 15, retention: 10 };
   };
 
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings>(() => loadSecuritySettings());
   const [syncStatus, setSyncStatus] = useState<string>('Idle');
-  
+  const [preferences, setPreferences] = useState<UserPreferences>(() => loadPreferences());
+  const [backupSettings, setBackupSettings] = useState<BackupSettings>(() => loadBackupSettings());
+  const [backups, setBackups] = useState<BackupSummary[]>([]);
+  const backupStore = useRef(new IndexedDBStorage());
+
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   // Command Palette State
   const [isCmdOpen, setIsCmdOpen] = useState(false);
   const [cmdQuery, setCmdQuery] = useState('');
@@ -107,7 +144,11 @@ const App: React.FC = () => {
     await localProvider.saveSnapshot(snapshot);
 
     if (securitySettings.cloudEnabled && securitySettings.cloudEndpoint) {
-        const cloudProvider = new CloudSyncProvider(securitySettings.cloudEndpoint, () => securitySettings.passphrase);
+        const cloudProvider = new CloudSyncProvider(
+            securitySettings.cloudEndpoint,
+            () => securitySettings.passphrase,
+            securitySettings.encryptCloudPayloads
+        );
         try {
             await cloudProvider.saveSnapshot(snapshot);
             setSyncStatus('Synced to cloud');
@@ -118,10 +159,47 @@ const App: React.FC = () => {
     }
   }, [securitySettings]);
 
+  const refreshBackups = useCallback(async () => {
+    const list = await backupStore.current.listBackups();
+    setBackups(list);
+  }, []);
+
+  const createBackup = useCallback(async (label = 'Manual backup') => {
+    const snapshot = snapshotFromState();
+    await backupStore.current.saveSnapshot(snapshot, {
+        label,
+        passphrase: securitySettings.passphrase,
+    });
+    await backupStore.current.prune(Math.max(backupSettings.retention, 1));
+    await refreshBackups();
+    setSyncStatus(`${label} stored locally`);
+  }, [backupSettings.retention, docs, inventory, machines, projects, refreshBackups, securitySettings.passphrase, vendors]);
+
+  const restoreBackup = useCallback(async (id: string) => {
+    const snapshot = await backupStore.current.loadSnapshot(id, securitySettings.passphrase);
+    if (!snapshot) return;
+
+    setProjects(snapshot.projects);
+    setInventory(snapshot.inventory);
+    setMachines(snapshot.machines);
+    setVendors(snapshot.vendors);
+    setDocs(snapshot.docs);
+    setSyncStatus('Restored from local backup');
+  }, [securitySettings.passphrase]);
+
+  const deleteBackup = useCallback(async (id: string) => {
+    await backupStore.current.deleteBackup(id);
+    await refreshBackups();
+  }, [refreshBackups]);
+
   useEffect(() => {
     const restore = async () => {
         const localProvider = new EncryptedLocalStorageProvider('construct_os_snapshot', () => securitySettings.passphrase);
-        const cloudProvider = new CloudSyncProvider(securitySettings.cloudEndpoint, () => securitySettings.passphrase);
+        const cloudProvider = new CloudSyncProvider(
+            securitySettings.cloudEndpoint,
+            () => securitySettings.passphrase,
+            securitySettings.encryptCloudPayloads
+        );
         let snapshot: SystemSnapshot | null = null;
 
         if (securitySettings.cloudEnabled) {
@@ -146,10 +224,11 @@ const App: React.FC = () => {
         setVendors(snapshot.vendors);
         setDocs(snapshot.docs);
         setInitialized(true);
+        refreshBackups();
     };
 
     restore();
-  }, []);
+  }, [refreshBackups, securitySettings]);
 
   // Save on Change
   useEffect(() => localStorage.setItem('construct_os_projects', JSON.stringify(projects)), [projects]);
@@ -178,6 +257,20 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+      if(isCmdOpen && cmdInputRef.current) {
+          cmdInputRef.current.focus();
+      }
+  }, [isCmdOpen]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    const runBackup = () => createBackup('Scheduled backup');
+    runBackup();
+    const interval = setInterval(runBackup, Math.max(backupSettings.intervalMinutes, 1) * 60_000);
+    return () => clearInterval(interval);
+  }, [backupSettings.intervalMinutes, createBackup, initialized]);
+
   // --- ACTIONS ---
   const addProject = useCallback((title: string) => {
     const newProject: Project = { id: Date.now().toString(), title, description: "Initialize definition...", status: 'concept', createdAt: Date.now(), bom: [], tasks: [], chatHistory: [] };
@@ -188,8 +281,8 @@ const App: React.FC = () => {
   const updateProject = (p: Project) => setProjects(prev => prev.map(old => old.id === p.id ? p : old));
   const deleteProject = (id: string) => { if(confirm("Delete Project?")) setProjects(prev => prev.filter(p => p.id !== id)); };
 
-  const exportSystem = () => {
-      const dump = JSON.stringify({ projects, inventory, machines, vendors, docs });
+  const exportSystem = async () => {
+      const dump = await encryptSnapshot({ projects, inventory, machines, vendors, docs }, securitySettings.passphrase);
       const blob = new Blob([dump], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -198,8 +291,13 @@ const App: React.FC = () => {
       link.click();
   };
 
-  const importSystem = (json: string) => {
-      const data = JSON.parse(json);
+  const importSystem = async (json: string) => {
+      let data: any = null;
+      try {
+          data = await decryptSnapshot(json, securitySettings.passphrase);
+      } catch {
+          data = JSON.parse(json);
+      }
       if(data.projects) setProjects(data.projects);
       if(data.inventory) setInventory(data.inventory);
       if(data.machines) setMachines(data.machines);
@@ -216,6 +314,19 @@ const App: React.FC = () => {
 
   const updateSecuritySettings = (partial: Partial<SecuritySettings>) => {
       setSecuritySettings(prev => ({ ...prev, ...partial }));
+  };
+
+  const updatePreferences = (partial: Partial<UserPreferences>) => {
+      setPreferences(prev => ({
+          ...prev,
+          appearance: { ...prev.appearance, ...(partial.appearance || {}) },
+          localization: { ...prev.localization, ...(partial.localization || {}) },
+          notifications: { ...prev.notifications, ...(partial.notifications || {}) },
+      }));
+  };
+
+  const updateBackupSettings = (partial: Partial<BackupSettings>) => {
+      setBackupSettings(prev => ({ ...prev, ...partial }));
   };
 
   const manualCloudSync = async () => {
@@ -595,6 +706,14 @@ const App: React.FC = () => {
                     onUpdateSecurity={updateSecuritySettings}
                     onSync={manualCloudSync}
                     syncStatus={syncStatus}
+                    preferences={preferences}
+                    onUpdatePreferences={updatePreferences}
+                    backupSettings={backupSettings}
+                    onUpdateBackupSettings={updateBackupSettings}
+                    backups={backups}
+                    onCreateBackup={createBackup}
+                    onRestoreBackup={restoreBackup}
+                    onDeleteBackup={deleteBackup}
                 />
             )}
         </div>

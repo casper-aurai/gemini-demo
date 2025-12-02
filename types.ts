@@ -11,6 +11,33 @@ export interface SecuritySettings {
     passphrase: string;
     cloudEnabled: boolean;
     cloudEndpoint: string;
+    encryptCloudPayloads?: boolean;
+}
+
+export type ThemePreference = 'dark' | 'light' | 'system';
+export type DensityPreference = 'comfortable' | 'compact';
+
+export interface NotificationPreferences {
+    alerts: boolean;
+    maintenance: boolean;
+    digest: boolean;
+}
+
+export interface UserPreferences {
+    appearance: {
+        theme: ThemePreference;
+        density: DensityPreference;
+    };
+    localization: {
+        language: string;
+        timezone: string;
+    };
+    notifications: NotificationPreferences;
+}
+
+export interface BackupSettings {
+    intervalMinutes: number;
+    retention: number;
 }
 
 export type NotificationSource = 'inventory' | 'maintenance' | 'vendor';
