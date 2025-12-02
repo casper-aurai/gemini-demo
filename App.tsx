@@ -5,7 +5,7 @@ import ProjectCard from './components/ProjectCard';
 import ProjectDetail from './components/ProjectDetail';
 import Stockroom from './components/Stockroom';
 import MachinePark from './components/MachinePark';
-import ReferenceLibrary from './components/ReferenceLibrary';
+import Library from './components/Library';
 import SupplyChain from './components/SupplyChain';
 import Analytics from './components/Analytics';
 import SystemCore from './components/SystemCore';
@@ -134,7 +134,41 @@ const App: React.FC = () => {
         { id: '1', name: 'McMaster-Carr', website: 'mcmaster.com', category: 'General', rating: 5, notes: 'Next day delivery.', leadTime: '1 Day', lastOrder: Date.now() - 86400000 },
         { id: '2', name: 'DigiKey', website: 'digikey.com', category: 'Electronics', rating: 4, leadTime: '3 Days' }
     ],
-    docs: []
+    docs: [
+        {
+            id: 'd1',
+            title: 'Safety Manual - 3 Axis Router',
+            type: 'pdf',
+            folder: 'Machines',
+            url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+            tags: ['safety', 'cnc'],
+            relatedMachineIds: ['1'],
+            description: 'Lockout and startup procedure reference for the CNC router.',
+            dateAdded: Date.now() - 1000000
+        },
+        {
+            id: 'd2',
+            title: 'Material Cert - 6061 Plate',
+            type: 'image',
+            folder: 'Materials',
+            fileName: '6061-cert.svg',
+            previewData: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="%23e2e8f0"/><stop offset="100%" stop-color="%23cbd5e1"/></linearGradient></defs><rect width="320" height="180" rx="16" fill="url(%23g)"/><text x="24" y="72" font-size="18" fill="%233334" font-family="Arial" font-weight="700">Material Certificate</text><text x="24" y="104" font-size="13" fill="%23555" font-family="Arial">Alloy 6061-T6 | Batch ACX-4471</text><text x="24" y="128" font-size="12" fill="%2371717a" font-family="Arial">Heat Treated / Anodize Ready</text></svg>',
+            tags: ['material', 'qa'],
+            relatedInventoryIds: ['1'],
+            description: 'Supplier provided certificate of conformance for the plate stock.',
+            dateAdded: Date.now() - 500000
+        },
+        {
+            id: 'd3',
+            title: 'Ender 3 Quick Service Checklist',
+            type: 'note',
+            folder: 'Service',
+            tags: ['maintenance', '3d printing'],
+            relatedMachineIds: ['2'],
+            description: 'Five minute preflight check for common 3D printer issues.',
+            dateAdded: Date.now() - 250000
+        }
+    ]
   };
 
   const snapshotFromState = (): SystemSnapshot => ({ projects, inventory, machines, vendors, docs });
@@ -696,7 +730,7 @@ const App: React.FC = () => {
             )}
             {currentView === 'machines' && <MachinePark machines={machines} onUpdate={setMachines} />}
             {currentView === 'supply' && <SupplyChain vendors={vendors} onUpdate={setVendors} />}
-            {currentView === 'library' && <ReferenceLibrary docs={docs} onUpdate={setDocs} />}
+            {currentView === 'library' && <Library docs={docs} onUpdate={setDocs} inventory={inventory} machines={machines} />}
             {currentView === 'analytics' && <Analytics projects={projects} inventory={inventory} machines={machines} />}
             {currentView === 'system' && (
                 <SystemCore

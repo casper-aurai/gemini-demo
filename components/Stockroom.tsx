@@ -43,6 +43,7 @@ const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate, presetSearch, on
     const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'healthy' | 'caution' | 'critical'>('all');
     const [minStockLevel, setMinStockLevel] = useState(0);
     const [quickFilters, setQuickFilters] = useState({ lowStock: false, recent: false });
+    const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
     useEffect(() => {
         if (typeof presetSearch === 'string') {
