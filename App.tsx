@@ -383,16 +383,6 @@ const App: React.FC = () => {
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const NavItem = ({ view, icon: Icon, label }: { view: ViewMode, icon: any, label: string }) => (
-      <button 
-        onClick={() => setCurrentView(view)}
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all mb-1 ${currentView === view ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}
-      >
-        <Icon size={16} />
-        <span className="font-medium text-sm">{label}</span>
-      </button>
-  );
-
   const Breadcrumbs = () => {
       if(selectedProject) return (
           <div className="flex items-center text-xs font-mono text-zinc-500 gap-2">
@@ -469,36 +459,18 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-200 font-sans">
-      
-      {/* Sidebar */}
-      <aside className="w-64 bg-zinc-950 text-zinc-400 flex flex-col flex-shrink-0 border-r border-zinc-900">
-        <div className="p-6">
-          <h1 className="font-serif text-2xl text-zinc-100 font-bold tracking-tight">Construct OS</h1>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">System V2.0</p>
-          </div>
-        </div>
-
-        <nav className="flex-1 px-4 space-y-6 overflow-y-auto">
-            <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Registry</div>
-                <NavItem view="dashboard" icon={LayoutDashboard} label="Active Projects" />
-            </div>
-            
-            <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Resources</div>
-                <NavItem view="stockroom" icon={Package} label="Stockroom" />
-                <NavItem view="machines" icon={Settings} label="Machine Park" />
-                <NavItem view="supply" icon={Truck} label="Supply Chain" />
-                <NavItem view="library" icon={Book} label="Library" />
-            </div>
-            
-            <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Operations</div>
-                <NavItem view="analytics" icon={BarChart3} label="Analytics" />
-                <NavItem view="system" icon={Database} label="System Core" />
+    <ResponsiveLayout
+        navGroups={navGroups}
+        breadcrumbs={<Breadcrumbs />}
+        onOpenCommand={() => setIsCmdOpen(true)}
+        headerActions={(
+            <div className="relative">
+                <Bell size={16} className="text-zinc-500 hover:text-zinc-300 cursor-pointer transition-colors" />
+                {unreadCount > 0 && (
+                    <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 bg-red-500 text-[10px] font-bold text-white rounded-full flex items-center justify-center">
+                        {unreadCount}
+                    </span>
+                )}
             </div>
         </nav>
         
@@ -551,53 +523,50 @@ const App: React.FC = () => {
           onSelect={handleCommandSelect}
         />
 
-        {/* Content Views */}
-        <div className="flex-1 overflow-hidden relative">
-            {currentView === 'dashboard' && (
-                <div className="flex-1 h-full overflow-y-auto p-8 bg-zinc-950">
-                     <div className="flex justify-between items-end mb-8">
-                        <div>
-                            <h2 className="text-2xl font-serif font-bold text-zinc-100">Project Registry</h2>
-                            <p className="text-zinc-500 text-sm mt-1">Active pipelines and engineering status.</p>
+        {currentView === 'dashboard' && (
+            <div className="flex-1 h-full overflow-y-auto p-8 bg-zinc-950">
+                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between mb-8">
+                    <div>
+                        <h2 className="text-2xl font-serif font-bold text-zinc-100">Project Registry</h2>
+                        <p className="text-zinc-500 text-sm mt-1">Active pipelines and engineering status.</p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                         <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" size={14} />
+                            <input
+                                type="text"
+                                placeholder="Filter projects..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-9 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-600 w-full sm:w-64 text-zinc-200"
+                            />
                         </div>
-                        <div className="flex gap-4">
-                             <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" size={14} />
-                                <input 
-                                    type="text" 
-                                    placeholder="Filter projects..." 
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="pl-9 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-600 w-64 text-zinc-200"
+                        <button
+                            onClick={() => { const t = prompt("Project Designation:"); if(t) addProject(t); }}
+                            className="bg-zinc-100 text-zinc-900 px-4 py-2 rounded-md text-xs font-bold hover:bg-white flex items-center gap-2 uppercase tracking-wide transition-colors"
+                        >
+                            <Plus size={14} /> Initialize Project
+                        </button>
+                    </div>
+                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {filteredProjects.length === 0 ? (
+                        <div className="col-span-full flex flex-col items-center justify-center text-zinc-700 py-20 border border-dashed border-zinc-800 rounded-xl">
+                            <Box size={48} className="mb-4 opacity-20" />
+                            <p className="font-mono text-sm">REGISTRY EMPTY</p>
+                        </div>
+                    ) : (
+                        filteredProjects.map(project => (
+                            <div key={project.id} onClick={() => setSelectedProjectId(project.id)} className="cursor-pointer h-full">
+                                <ProjectCard
+                                    project={project}
+                                    onStatusChange={(id, status) => setProjects(p => p.map(pr => pr.id === id ? { ...pr, status } : pr))}
+                                    onDelete={deleteProject}
                                 />
                             </div>
-                            <button 
-                                onClick={() => { const t = prompt("Project Designation:"); if(t) addProject(t); }}
-                                className="bg-zinc-100 text-zinc-900 px-4 py-2 rounded-md text-xs font-bold hover:bg-white flex items-center gap-2 uppercase tracking-wide transition-colors"
-                            >
-                                <Plus size={14} /> Initialize Project
-                            </button>
-                        </div>
-                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {filteredProjects.length === 0 ? (
-                            <div className="col-span-full flex flex-col items-center justify-center text-zinc-700 py-20 border border-dashed border-zinc-800 rounded-xl">
-                                <Box size={48} className="mb-4 opacity-20" />
-                                <p className="font-mono text-sm">REGISTRY EMPTY</p>
-                            </div>
-                        ) : (
-                            filteredProjects.map(project => (
-                                <div key={project.id} onClick={() => setSelectedProjectId(project.id)} className="cursor-pointer h-full">
-                                    <ProjectCard 
-                                        project={project} 
-                                        onStatusChange={(id, status) => setProjects(p => p.map(pr => pr.id === id ? { ...pr, status } : pr))}
-                                        onDelete={deleteProject}
-                                    />
-                                </div>
-                            ))
-                        )}
-                    </div>
+                        ))
+                    )}
                 </div>
             )}
 
