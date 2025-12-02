@@ -1,19 +1,7 @@
+
 import React from 'react';
 import { Project, ProjectStatus } from '../types';
 import { Clock, DollarSign } from 'lucide-react';
-import {
-  Box,
-  Card,
-  CardActionArea,
-  CardContent,
-  CardMedia,
-  Chip,
-  LinearProgress,
-  Stack,
-  Typography,
-  IconButton,
-} from '@mui/material';
-import { useDensity } from '../designSystem';
 
 interface ProjectCardProps {
   project: Project;
@@ -21,89 +9,90 @@ interface ProjectCardProps {
   onDelete: (id: string) => void;
 }
 
-const statusColors: Record<ProjectStatus, { label: string; color: 'default' | 'primary' | 'success' | 'warning' | 'info'; }> = {
-  concept: { label: 'Concept', color: 'default' },
-  planning: { label: 'Planning', color: 'info' },
-  prototyping: { label: 'Prototyping', color: 'primary' },
-  fabrication: { label: 'Fabrication', color: 'warning' },
-  wiring: { label: 'Wiring', color: 'warning' },
-  assembly: { label: 'Assembly', color: 'warning' },
-  calibration: { label: 'Calibration', color: 'info' },
-  finished: { label: 'Finished', color: 'success' },
+const statusColors: Record<ProjectStatus, string> = {
+  concept: 'bg-zinc-800 text-zinc-400 border-zinc-700',
+  planning: 'bg-zinc-800 text-zinc-300 border-zinc-700',
+  prototyping: 'bg-blue-900/30 text-blue-400 border-blue-900/50',
+  fabrication: 'bg-amber-900/30 text-amber-400 border-amber-900/50',
+  wiring: 'bg-yellow-900/30 text-yellow-400 border-yellow-900/50',
+  assembly: 'bg-orange-900/30 text-orange-400 border-orange-900/50',
+  calibration: 'bg-purple-900/30 text-purple-400 border-purple-900/50',
+  finished: 'bg-green-900/30 text-green-400 border-green-900/50',
 };
 
 const ProjectCard: React.FC<ProjectCardProps> = ({ project, onStatusChange, onDelete }) => {
-  const { density } = useDensity();
-  const totalBudget = (project.bom || []).reduce((acc, item) => acc + item.quantity * (item.unitCost || 0), 0);
+  const totalBudget = (project.bom || []).reduce((acc, item) => acc + (item.quantity * (item.unitCost || 0)), 0);
+  
+  // Progress
   const totalTasks = project.tasks?.length || 0;
   const completedTasks = project.tasks?.filter(t => t.status === 'done').length || 0;
   const progress = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
 
-  const handleCycleStatus = () => {
-    const states: ProjectStatus[] = ['concept', 'planning', 'prototyping', 'fabrication', 'wiring', 'assembly', 'calibration', 'finished'];
-    const idx = states.indexOf(project.status);
-    const next = states[(idx + 1) % states.length];
-    onStatusChange(project.id, next);
-  };
-
   return (
-    <Card elevation={2} sx={{ height: '100%', bgcolor: 'background.paper' }}>
-      <CardActionArea sx={{ height: '100%' }}>
-        {project.imageUrl && (
-          <CardMedia component="img" height={160} image={project.imageUrl} alt={project.title} sx={{ opacity: 0.9 }} />
-        )}
-        <CardContent>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} mb={1}>
-            <Chip
-              label={statusColors[project.status].label}
-              color={statusColors[project.status].color}
-              size={density === 'compact' ? 'small' : 'medium'}
-              variant="outlined"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCycleStatus();
-              }}
-            />
-            <IconButton size="small" aria-label="delete project" onClick={(e) => { e.stopPropagation(); onDelete(project.id); }}>
-              <Typography variant="caption" color="error.main" fontWeight={700}>
-                DEL
-              </Typography>
-            </IconButton>
-          </Stack>
-          <Typography variant="h6" mb={0.5} color="text.primary">
-            {project.title}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" mb={2} noWrap>
-            {project.description}
-          </Typography>
+    <div className="bg-zinc-900 rounded-lg shadow-lg border border-zinc-800 overflow-hidden flex flex-col group hover:border-zinc-600 transition-all h-full relative">
+      <div className="h-40 overflow-hidden bg-zinc-950 relative border-b border-zinc-800">
+         {project.imageUrl ? (
+            <>
+              <img 
+                src={project.imageUrl} 
+                alt={project.title} 
+                className="w-full h-full object-cover group-hover:scale-105 transition-all duration-700 opacity-80 group-hover:opacity-100" 
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-transparent to-transparent opacity-60"></div>
+            </>
+          ) : (
+              <div className="h-40 flex items-center justify-center">
+                  <span className="text-zinc-700 font-mono text-xs uppercase tracking-widest">No Schematic</span>
+              </div>
+          )}
+          
+          <div className="absolute bottom-2 right-2">
+             <span className={`text-[10px] px-2 py-0.5 rounded border uppercase font-bold tracking-widest ${statusColors[project.status]}`}>
+                {project.status}
+             </span>
+          </div>
+      </div>
 
-          <Stack spacing={0.5} mb={2}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography variant="caption" color="text.secondary" fontWeight={700} letterSpacing={0.6}>
-                Completion
-              </Typography>
-              <Typography variant="caption" color="text.secondary">{progress}%</Typography>
-            </Stack>
-            <LinearProgress value={progress} variant="determinate" color="primary" />
-          </Stack>
+      <div className="p-4 flex-1 flex flex-col">
+        <h3 className="font-serif font-bold text-lg text-zinc-100 leading-tight mb-2 group-hover:text-white transition-colors">{project.title}</h3>
+        
+        <p className="text-xs text-zinc-400 line-clamp-2 mb-4 flex-1 font-sans leading-relaxed">{project.description}</p>
+        
+        {/* Progress Bar */}
+        <div className="mb-4">
+            <div className="flex justify-between text-[10px] text-zinc-500 mb-1 uppercase tracking-wider font-bold">
+                <span>Completion</span>
+                <span>{progress}%</span>
+            </div>
+            <div className="w-full bg-zinc-800 h-1 rounded-full overflow-hidden">
+                <div className="bg-zinc-400 h-full" style={{ width: `${progress}%` }}></div>
+            </div>
+        </div>
 
-          <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
-            <Stack direction="row" spacing={1} alignItems="center" color="text.secondary">
-              <Clock size={14} />
-              <Typography variant="caption">{new Date(project.createdAt).toLocaleDateString()}</Typography>
-            </Stack>
+        <div className="flex items-center justify-between text-xs text-zinc-500 mt-auto pt-3 border-t border-zinc-800" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 font-mono text-zinc-400">
+                <Clock size={12} />
+                <span>{new Date(project.createdAt).toLocaleDateString()}</span>
+            </div>
+
             {totalBudget > 0 && (
-              <Stack direction="row" spacing={0.5} alignItems="center" color="success.main">
-                <DollarSign size={14} />
-                <Typography variant="caption" fontWeight={700}>
-                  {totalBudget.toFixed(0)}
-                </Typography>
-              </Stack>
+                <div className="flex items-center gap-1 font-mono text-green-500">
+                    <DollarSign size={12} />
+                    <span>{totalBudget.toFixed(0)}</span>
+                </div>
             )}
-          </Stack>
-        </CardContent>
-      </CardActionArea>
-    </Card>
+            
+            <div className="flex gap-2 ml-auto">
+                 <button 
+                    onClick={() => onDelete(project.id)}
+                    className="text-zinc-600 hover:text-red-500 transition-colors px-1"
+                >
+                    DEL
+                </button>
+            </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

@@ -7,54 +7,12 @@ export type MachineStatus = 'operational' | 'degraded' | 'down' | 'maintenance' 
 
 export type ViewMode = 'dashboard' | 'stockroom' | 'machines' | 'library' | 'supply' | 'analytics' | 'system';
 
-export interface SecuritySettings {
-    passphrase: string;
-    cloudEnabled: boolean;
-    cloudEndpoint: string;
-    encryptCloudPayloads?: boolean;
-}
-
-export type ThemePreference = 'dark' | 'light' | 'system';
-export type DensityPreference = 'comfortable' | 'compact';
-
-export interface NotificationPreferences {
-    alerts: boolean;
-    maintenance: boolean;
-    digest: boolean;
-}
-
-export interface UserPreferences {
-    appearance: {
-        theme: ThemePreference;
-        density: DensityPreference;
-    };
-    localization: {
-        language: string;
-        timezone: string;
-    };
-    notifications: NotificationPreferences;
-}
-
-export interface BackupSettings {
-    intervalMinutes: number;
-    retention: number;
-}
-
-export type NotificationSource = 'inventory' | 'maintenance' | 'vendor';
-
-export interface NotificationLink {
-    view: ViewMode;
-    id?: string;
-}
-
 export interface Notification {
     id: string;
     type: 'alert' | 'info' | 'success';
     message: string;
     timestamp: number;
     read: boolean;
-    source: NotificationSource;
-    link?: NotificationLink;
 }
 
 export interface ProjectTask {
@@ -105,29 +63,6 @@ export interface InventoryItem {
     cost?: number;
 }
 
-export interface MachineMaintenanceEntry {
-    date: number;
-    note: string;
-    cost?: number;
-    technician?: string;
-    parts?: string[];
-}
-
-export interface MachineStatusChange {
-    date: number;
-    status: MachineStatus;
-    note?: string;
-}
-
-export interface MachineMaintenanceWindow {
-    id: string;
-    title: string;
-    start: number;
-    end: number;
-    technician?: string;
-    type?: string;
-}
-
 export interface Machine {
     id: string;
     name: string;
@@ -137,10 +72,7 @@ export interface Machine {
     nextService: number;
     image?: string;
     notes?: string;
-    maintenanceLog?: MachineMaintenanceEntry[];
-    statusHistory?: MachineStatusChange[];
-    utilization?: number[];
-    maintenanceWindows?: MachineMaintenanceWindow[];
+    maintenanceLog?: { date: number; note: string }[];
 }
 
 export interface Vendor {
@@ -154,20 +86,12 @@ export interface Vendor {
     notes?: string;
 }
 
-export type LibraryDocType = 'pdf' | 'image' | 'link' | 'note';
-
 export interface ReferenceDoc {
     id: string;
     title: string;
-    type: LibraryDocType;
-    description?: string;
-    folder?: string;
+    type: 'datasheet' | 'manual' | 'standard' | 'receipt';
     url?: string; // external link
-    fileName?: string;
-    previewData?: string; // data url for inline preview
     tags: string[];
-    relatedInventoryIds?: string[];
-    relatedMachineIds?: string[];
     dateAdded: number;
 }
 

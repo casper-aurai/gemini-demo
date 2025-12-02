@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Project, ProjectTask, TaskStatus } from '../types';
 import { generateOperations } from '../services/geminiService';
@@ -8,6 +7,39 @@ interface OperationsManagerProps {
     project: Project;
     onUpdateProject: (p: Project) => void;
 }
+
+interface TaskItemProps {
+    task: ProjectTask;
+    onStatusChange: (id: string, newStatus: TaskStatus) => void;
+    onDelete: (id: string) => void;
+}
+
+const TaskItem: React.FC<TaskItemProps> = ({ task, onStatusChange, onDelete }) => (
+    <div className="bg-white border border-zinc-200 rounded-lg p-3 mb-2 shadow-sm group flex items-start gap-3 hover:border-zinc-300 transition-colors">
+        <button 
+            onClick={() => {
+                const next = task.status === 'pending' ? 'in_progress' : task.status === 'in_progress' ? 'done' : 'pending';
+                onStatusChange(task.id, next);
+            }}
+            className={`mt-0.5 flex-shrink-0 ${
+                task.status === 'done' ? 'text-green-600' : 
+                task.status === 'in_progress' ? 'text-blue-600' : 'text-zinc-300'
+            }`}
+        >
+            {task.status === 'done' ? <CheckCircle2 size={18} /> : 
+             task.status === 'in_progress' ? <Clock size={18} /> : <Circle size={18} />}
+        </button>
+        <span className={`text-sm flex-1 ${task.status === 'done' ? 'text-zinc-400 line-through' : 'text-zinc-800'}`}>
+            {task.text}
+        </span>
+        <button 
+            onClick={() => onDelete(task.id)}
+            className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+            <X size={14} />
+        </button>
+    </div>
+);
 
 const OperationsManager: React.FC<OperationsManagerProps> = ({ project, onUpdateProject }) => {
     const [loading, setLoading] = useState(false);
@@ -55,33 +87,6 @@ const OperationsManager: React.FC<OperationsManagerProps> = ({ project, onUpdate
     const inProgress = tasks.filter(t => t.status === 'in_progress');
     const done = tasks.filter(t => t.status === 'done');
 
-    const TaskItem = ({ task }: { task: ProjectTask }) => (
-        <div className="bg-white border border-zinc-200 rounded-lg p-3 mb-2 shadow-sm group flex items-start gap-3 hover:border-zinc-300 transition-colors">
-            <button 
-                onClick={() => {
-                    const next = task.status === 'pending' ? 'in_progress' : task.status === 'in_progress' ? 'done' : 'pending';
-                    updateTaskStatus(task.id, next);
-                }}
-                className={`mt-0.5 flex-shrink-0 ${
-                    task.status === 'done' ? 'text-green-600' : 
-                    task.status === 'in_progress' ? 'text-blue-600' : 'text-zinc-300'
-                }`}
-            >
-                {task.status === 'done' ? <CheckCircle2 size={18} /> : 
-                 task.status === 'in_progress' ? <Clock size={18} /> : <Circle size={18} />}
-            </button>
-            <span className={`text-sm flex-1 ${task.status === 'done' ? 'text-zinc-400 line-through' : 'text-zinc-800'}`}>
-                {task.text}
-            </span>
-            <button 
-                onClick={() => removeTask(task.id)}
-                className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-                <X size={14} />
-            </button>
-        </div>
-    );
-
     return (
         <div className="h-full flex flex-col">
             <div className="flex justify-between items-center mb-6">
@@ -125,7 +130,14 @@ const OperationsManager: React.FC<OperationsManagerProps> = ({ project, onUpdate
                         </div>
 
                         <div className="flex-1 overflow-y-auto">
-                            {pending.map(t => <TaskItem key={t.id} task={t} />)}
+                            {pending.map(t => (
+                                <TaskItem 
+                                    key={t.id} 
+                                    task={t} 
+                                    onStatusChange={updateTaskStatus} 
+                                    onDelete={removeTask} 
+                                />
+                            ))}
                         </div>
                     </div>
 
@@ -138,7 +150,14 @@ const OperationsManager: React.FC<OperationsManagerProps> = ({ project, onUpdate
                             <span className="text-xs font-mono bg-blue-100 px-2 py-0.5 rounded-full text-blue-700">{inProgress.length}</span>
                         </div>
                         <div className="flex-1 overflow-y-auto">
-                             {inProgress.map(t => <TaskItem key={t.id} task={t} />)}
+                             {inProgress.map(t => (
+                                <TaskItem 
+                                    key={t.id} 
+                                    task={t} 
+                                    onStatusChange={updateTaskStatus} 
+                                    onDelete={removeTask} 
+                                />
+                            ))}
                         </div>
                     </div>
 
@@ -151,7 +170,14 @@ const OperationsManager: React.FC<OperationsManagerProps> = ({ project, onUpdate
                             <span className="text-xs font-mono bg-green-100 px-2 py-0.5 rounded-full text-green-700">{done.length}</span>
                         </div>
                         <div className="flex-1 overflow-y-auto">
-                             {done.map(t => <TaskItem key={t.id} task={t} />)}
+                             {done.map(t => (
+                                <TaskItem 
+                                    key={t.id} 
+                                    task={t} 
+                                    onStatusChange={updateTaskStatus} 
+                                    onDelete={removeTask} 
+                                />
+                            ))}
                         </div>
                     </div>
                 </div>

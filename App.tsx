@@ -1,28 +1,22 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Project, ProjectStatus, InventoryItem, Machine, Vendor, ReferenceDoc, ViewMode, Notification, SecuritySettings, UserPreferences, BackupSettings } from './types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Project, ProjectStatus, InventoryItem, Machine, Vendor, ReferenceDoc, ViewMode, Notification } from './types';
 import ProjectCard from './components/ProjectCard';
 import ProjectDetail from './components/ProjectDetail';
 import Stockroom from './components/Stockroom';
 import MachinePark from './components/MachinePark';
-import Library from './components/Library';
+import ReferenceLibrary from './components/ReferenceLibrary';
 import SupplyChain from './components/SupplyChain';
 import Analytics from './components/Analytics';
 import SystemCore from './components/SystemCore';
-import CommandPalette from './components/CommandPalette';
-import SearchService, { SearchEntry } from './services/searchService';
-import { CloudSyncProvider, EncryptedLocalStorageProvider, SystemSnapshot } from './services/dataProvider';
-import { Badge, Box as MuiBox, Button, IconButton, Stack, Typography } from '@mui/material';
-import SettingsMenu from './components/SettingsMenu';
-import { useDensity } from './designSystem';
 
-import {
-    LayoutDashboard, Plus, Search, Box, Package, Settings,
-    Book, Truck, BarChart3, Database, ChevronRight, Command
+import { 
+    LayoutDashboard, Plus, Search, Activity, Box, Package, Settings, 
+    Book, Truck, BarChart3, Database, Bell, ChevronRight, Command, 
+    Layers, AlertCircle 
 } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { density } = useDensity();
   // --- STATE MANAGEMENT ---
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -33,81 +27,24 @@ const App: React.FC = () => {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [docs, setDocs] = useState<ReferenceDoc[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [initialized, setInitialized] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = notificationService.subscribe(setNotifications);
-    return () => unsubscribe();
-  }, []);
-
-  const loadSecuritySettings = (): SecuritySettings => {
-    const raw = localStorage.getItem('construct_os_security_settings');
-    if (raw) {
-        try {
-            const parsed = JSON.parse(raw);
-            return {
-                passphrase: parsed.passphrase || 'construct-os-local',
-                cloudEnabled: Boolean(parsed.cloudEnabled),
-                cloudEndpoint: parsed.cloudEndpoint || 'http://localhost:4000/snapshot',
-                encryptCloudPayloads: parsed.encryptCloudPayloads ?? true,
-            };
-        } catch (err) {
-            console.warn('Failed to parse security settings', err);
-        }
-    }
-    return { passphrase: 'construct-os-local', cloudEnabled: false, cloudEndpoint: 'http://localhost:4000/snapshot', encryptCloudPayloads: true };
-  };
-
-  const loadPreferences = (): UserPreferences => {
-    const raw = localStorage.getItem('construct_os_preferences');
-    if (raw) {
-        try {
-            return JSON.parse(raw) as UserPreferences;
-        } catch (err) {
-            console.warn('Failed to parse preferences', err);
-        }
-    }
-
-    return {
-        appearance: { theme: 'dark', density: 'comfortable' },
-        localization: {
-            language: navigator.language || 'en',
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-        },
-        notifications: { alerts: true, maintenance: true, digest: false },
-    };
-  };
-
-  const loadBackupSettings = (): BackupSettings => {
-    const raw = localStorage.getItem('construct_os_backup_settings');
-    if (raw) {
-        try {
-            return JSON.parse(raw) as BackupSettings;
-        } catch (err) {
-            console.warn('Failed to parse backup settings', err);
-        }
-    }
-    return { intervalMinutes: 15, retention: 10 };
-  };
-
-  const [securitySettings, setSecuritySettings] = useState<SecuritySettings>(() => loadSecuritySettings());
-  const [syncStatus, setSyncStatus] = useState<string>('Idle');
-  const [preferences, setPreferences] = useState<UserPreferences>(() => loadPreferences());
-  const [backupSettings, setBackupSettings] = useState<BackupSettings>(() => loadBackupSettings());
-  const [backups, setBackups] = useState<BackupSummary[]>([]);
-  const backupStore = useRef(new IndexedDBStorage());
-
+  
   const [searchTerm, setSearchTerm] = useState('');
-
+  
   // Command Palette State
   const [isCmdOpen, setIsCmdOpen] = useState(false);
   const [cmdQuery, setCmdQuery] = useState('');
-  const [stockroomPresetSearch, setStockroomPresetSearch] = useState<string | null>(null);
-  const searchIndexRef = useRef(new SearchService());
+  const cmdInputRef = useRef<HTMLInputElement>(null);
 
   // --- PERSISTENCE ---
-  const seedSnapshot: SystemSnapshot = {
-    projects: [
+  useEffect(() => {
+    const load = (key: string, setter: any, seed: any) => {
+        const saved = localStorage.getItem(key);
+        if (saved) setter(JSON.parse(saved));
+        else setter(seed);
+    };
+
+    // Initial Seeds
+    load('construct_os_projects', setProjects, [
         {
             id: '1', title: '3-Axis CNC Router V4', description: 'Aluminum extrusion frame 1500x1500mm. NEMA 23 High Torque steppers.', status: 'wiring', createdAt: Date.now(), imageUrl: 'https://picsum.photos/seed/cnc/800/600',
             bom: [{ category: 'Frame', itemName: '2080 Extrusion', quantity: 4, specifications: '1500mm, Black Anodized', unitCost: 45.00 }],
@@ -116,167 +53,85 @@ const App: React.FC = () => {
         {
             id: '2', title: 'Hydraulic Log Splitter', description: '20-ton cylinder force. 6.5HP gas engine.', status: 'fabrication', createdAt: Date.now() - 10000000, imageUrl: 'https://picsum.photos/seed/hydro/800/600', bom: [], tasks: [], chatHistory: []
         }
-    ],
-    inventory: [
+    ]);
+
+    load('construct_os_inventory', setInventory, [
         { id: '1', name: '6061 Aluminum Plate', category: 'Raw Material', quantity: 4, unit: 'sheets', location: 'Rack 1', minLevel: 2, cost: 120 },
         { id: '2', name: 'M5x20mm SHCS', category: 'Hardware', quantity: 150, unit: 'pcs', location: 'Bin A12', minLevel: 50, cost: 0.15 }
-    ],
-    machines: [
-        { id: '1', name: 'Bridgeport Mill', type: 'Milling', status: 'operational', lastService: Date.now() - 10000000, nextService: Date.now() + 2000000, notes: 'Quill feed sticky.' },
-        { id: '2', name: 'Ender 3 Pro', type: '3D Printer', status: 'maintenance', lastService: Date.now(), nextService: Date.now() + 5000000, notes: 'Nozzle clog.' },
-        { id: '3', name: 'Bosch GTS 10 XC', type: 'Table Saw', status: 'operational', lastService: Date.now() - 2000000, nextService: Date.now() + 4000000, notes: 'Blade alignment perfect.' },
-        { id: '4', name: 'Bosch 18V Prof Set', type: 'Power Tools', status: 'operational', lastService: Date.now() - 5000000, nextService: Date.now() + 10000000, notes: 'Includes GSB, GDR, GKS.' },
-        { id: '5', name: 'Makita DGA504', type: 'Grinder', status: 'operational', lastService: Date.now() - 1000000, nextService: Date.now() + 2000000, notes: 'Paddle switch.' },
-        { id: '6', name: 'Makita DMR115', type: 'Audio', status: 'operational', lastService: Date.now() - 8000000, nextService: Date.now() + 20000000, notes: 'Workshop Radio / DAB+.' },
-        { id: '7', name: 'Kärcher WD 6 P', type: 'Vacuum', status: 'degraded', lastService: Date.now() - 500000, nextService: Date.now() - 1000000, notes: 'Filter clean needed overdue.' }
-    ],
-    vendors: [
+    ]);
+
+    load('construct_os_machines', setMachines, [
+        { id: '1', name: 'Bridgeport Mill', type: 'Milling', status: 'operational', lastService: Date.now() - 10000000, nextService: Date.now() + 2000000, notes: 'Quill feed sticky.', maintenanceLog: [] },
+        { id: '2', name: 'Ender 3 Pro', type: '3D Printer', status: 'maintenance', lastService: Date.now(), nextService: Date.now() + 5000000, notes: 'Nozzle clog.', maintenanceLog: [] },
+        { id: '3', name: 'Bosch GTS 10 XC', type: 'Table Saw', status: 'operational', lastService: Date.now() - 2000000, nextService: Date.now() + 4000000, notes: 'Blade alignment perfect.', maintenanceLog: [] },
+        { id: '4', name: 'Bosch 18V Prof Set', type: 'Power Tools', status: 'operational', lastService: Date.now() - 5000000, nextService: Date.now() + 10000000, notes: 'Includes GSB, GDR, GKS.', maintenanceLog: [] },
+        { id: '5', name: 'Makita DGA504', type: 'Grinder', status: 'operational', lastService: Date.now() - 1000000, nextService: Date.now() + 2000000, notes: 'Paddle switch.', maintenanceLog: [] },
+        { id: '6', name: 'Makita DMR115', type: 'Audio', status: 'operational', lastService: Date.now() - 8000000, nextService: Date.now() + 20000000, notes: 'Workshop Radio / DAB+.', maintenanceLog: [] },
+        { id: '7', name: 'Kärcher WD 6 P', type: 'Vacuum', status: 'degraded', lastService: Date.now() - 500000, nextService: Date.now() - 1000000, notes: 'Filter clean needed overdue.', maintenanceLog: [] }
+    ]);
+
+    load('construct_os_vendors', setVendors, [
         { id: '1', name: 'McMaster-Carr', website: 'mcmaster.com', category: 'General', rating: 5, notes: 'Next day delivery.', leadTime: '1 Day', lastOrder: Date.now() - 86400000 },
         { id: '2', name: 'DigiKey', website: 'digikey.com', category: 'Electronics', rating: 4, leadTime: '3 Days' }
-    ],
-    docs: [
-        {
-            id: 'd1',
-            title: 'Safety Manual - 3 Axis Router',
-            type: 'pdf',
-            folder: 'Machines',
-            url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-            tags: ['safety', 'cnc'],
-            relatedMachineIds: ['1'],
-            description: 'Lockout and startup procedure reference for the CNC router.',
-            dateAdded: Date.now() - 1000000
-        },
-        {
-            id: 'd2',
-            title: 'Material Cert - 6061 Plate',
-            type: 'image',
-            folder: 'Materials',
-            fileName: '6061-cert.svg',
-            previewData: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="%23e2e8f0"/><stop offset="100%" stop-color="%23cbd5e1"/></linearGradient></defs><rect width="320" height="180" rx="16" fill="url(%23g)"/><text x="24" y="72" font-size="18" fill="%233334" font-family="Arial" font-weight="700">Material Certificate</text><text x="24" y="104" font-size="13" fill="%23555" font-family="Arial">Alloy 6061-T6 | Batch ACX-4471</text><text x="24" y="128" font-size="12" fill="%2371717a" font-family="Arial">Heat Treated / Anodize Ready</text></svg>',
-            tags: ['material', 'qa'],
-            relatedInventoryIds: ['1'],
-            description: 'Supplier provided certificate of conformance for the plate stock.',
-            dateAdded: Date.now() - 500000
-        },
-        {
-            id: 'd3',
-            title: 'Ender 3 Quick Service Checklist',
-            type: 'note',
-            folder: 'Service',
-            tags: ['maintenance', '3d printing'],
-            relatedMachineIds: ['2'],
-            description: 'Five minute preflight check for common 3D printer issues.',
-            dateAdded: Date.now() - 250000
-        }
-    ]
-  };
+    ]);
+    
+    load('construct_os_docs', setDocs, []);
 
-  const snapshotFromState = (): SystemSnapshot => ({ projects, inventory, machines, vendors, docs });
-
-  const persistSnapshot = useCallback(async (snapshot: SystemSnapshot) => {
-    const localProvider = new EncryptedLocalStorageProvider('construct_os_snapshot', () => securitySettings.passphrase);
-    await localProvider.saveSnapshot(snapshot);
-
-    if (securitySettings.cloudEnabled && securitySettings.cloudEndpoint) {
-        const cloudProvider = new CloudSyncProvider(
-            securitySettings.cloudEndpoint,
-            () => securitySettings.passphrase,
-            securitySettings.encryptCloudPayloads
-        );
-        try {
-            await cloudProvider.saveSnapshot(snapshot);
-            setSyncStatus('Synced to cloud');
-        } catch (err) {
-            console.error('Cloud sync failed', err);
-            setSyncStatus('Cloud sync failed');
-        }
-    }
-  }, [securitySettings]);
-
-  const refreshBackups = useCallback(async () => {
-    const list = await backupStore.current.listBackups();
-    setBackups(list);
   }, []);
 
-  const createBackup = useCallback(async (label = 'Manual backup') => {
-    const snapshot = snapshotFromState();
-    await backupStore.current.saveSnapshot(snapshot, {
-        label,
-        passphrase: securitySettings.passphrase,
-    });
-    await backupStore.current.prune(Math.max(backupSettings.retention, 1));
-    await refreshBackups();
-    setSyncStatus(`${label} stored locally`);
-  }, [backupSettings.retention, docs, inventory, machines, projects, refreshBackups, securitySettings.passphrase, vendors]);
-
-  const restoreBackup = useCallback(async (id: string) => {
-    const snapshot = await backupStore.current.loadSnapshot(id, securitySettings.passphrase);
-    if (!snapshot) return;
-
-    setProjects(snapshot.projects);
-    setInventory(snapshot.inventory);
-    setMachines(snapshot.machines);
-    setVendors(snapshot.vendors);
-    setDocs(snapshot.docs);
-    setSyncStatus('Restored from local backup');
-  }, [securitySettings.passphrase]);
-
-  const deleteBackup = useCallback(async (id: string) => {
-    await backupStore.current.deleteBackup(id);
-    await refreshBackups();
-  }, [refreshBackups]);
-
+  // --- SYSTEM WATCHDOG (NOTIFICATIONS) ---
   useEffect(() => {
-    const restore = async () => {
-        const localProvider = new EncryptedLocalStorageProvider('construct_os_snapshot', () => securitySettings.passphrase);
-        const cloudProvider = new CloudSyncProvider(
-            securitySettings.cloudEndpoint,
-            () => securitySettings.passphrase,
-            securitySettings.encryptCloudPayloads
-        );
-        let snapshot: SystemSnapshot | null = null;
+      const generateNotifications = () => {
+          const newNotes: Notification[] = [];
+          
+          // Check Inventory
+          inventory.forEach(item => {
+              if (item.quantity <= item.minLevel) {
+                  newNotes.push({
+                      id: `low_stock_${item.id}`,
+                      type: item.quantity === 0 ? 'alert' : 'info',
+                      message: `Low Stock: ${item.name} (${item.quantity} ${item.unit} remaining)`,
+                      timestamp: Date.now(),
+                      read: false
+                  });
+              }
+          });
 
-        if (securitySettings.cloudEnabled) {
-            try {
-                snapshot = await cloudProvider.loadSnapshot();
-                if (snapshot) setSyncStatus('Restored from cloud');
-            } catch (err) {
-                console.warn('Cloud restore failed', err);
-                setSyncStatus('Cloud restore failed; using local data');
-            }
-        }
+          // Check Machines
+          machines.forEach(machine => {
+              if (machine.status === 'down' || machine.status === 'maintenance') {
+                   newNotes.push({
+                      id: `machine_${machine.id}`,
+                      type: 'alert',
+                      message: `Equipment Alert: ${machine.name} is ${machine.status.toUpperCase()}`,
+                      timestamp: Date.now(),
+                      read: false
+                  });
+              }
+              if (Date.now() > machine.nextService) {
+                   newNotes.push({
+                      id: `service_${machine.id}`,
+                      type: 'info',
+                      message: `Maintenance Due: ${machine.name}`,
+                      timestamp: Date.now(),
+                      read: false
+                  });
+              }
+          });
+          
+          // Deduplicate based on ID and keep latest
+          setNotifications(newNotes);
+      };
 
-        if (!snapshot) {
-            snapshot = await localProvider.loadSnapshot();
-        }
-
-        if (!snapshot) snapshot = seedSnapshot;
-
-        setProjects(snapshot.projects);
-        setInventory(snapshot.inventory);
-        setMachines(snapshot.machines);
-        setVendors(snapshot.vendors);
-        setDocs(snapshot.docs);
-        setInitialized(true);
-        refreshBackups();
-    };
-
-    restore();
-  }, [refreshBackups, securitySettings]);
+      generateNotifications();
+  }, [inventory, machines]);
 
   // Save on Change
   useEffect(() => localStorage.setItem('construct_os_projects', JSON.stringify(projects)), [projects]);
-  useEffect(() => {
-    localStorage.setItem('construct_os_inventory', JSON.stringify(inventory));
-  }, [inventory]);
+  useEffect(() => localStorage.setItem('construct_os_inventory', JSON.stringify(inventory)), [inventory]);
   useEffect(() => localStorage.setItem('construct_os_machines', JSON.stringify(machines)), [machines]);
   useEffect(() => localStorage.setItem('construct_os_vendors', JSON.stringify(vendors)), [vendors]);
   useEffect(() => localStorage.setItem('construct_os_docs', JSON.stringify(docs)), [docs]);
-
-  useEffect(() => {
-    if (!initialized) return;
-    notificationService.recompute({ inventory, machines, vendors });
-  }, [inventory, machines, vendors, initialized]);
 
   // --- GLOBAL KEYBOARD SHORTCUTS ---
   useEffect(() => {
@@ -297,26 +152,18 @@ const App: React.FC = () => {
       }
   }, [isCmdOpen]);
 
-  useEffect(() => {
-    if (!initialized) return;
-    const runBackup = () => createBackup('Scheduled backup');
-    runBackup();
-    const interval = setInterval(runBackup, Math.max(backupSettings.intervalMinutes, 1) * 60_000);
-    return () => clearInterval(interval);
-  }, [backupSettings.intervalMinutes, createBackup, initialized]);
-
   // --- ACTIONS ---
-  const addProject = useCallback((title: string) => {
+  const addProject = (title: string) => {
     const newProject: Project = { id: Date.now().toString(), title, description: "Initialize definition...", status: 'concept', createdAt: Date.now(), bom: [], tasks: [], chatHistory: [] };
     setProjects(prev => [newProject, ...prev]);
     setSelectedProjectId(newProject.id);
-  }, []);
+  };
 
   const updateProject = (p: Project) => setProjects(prev => prev.map(old => old.id === p.id ? p : old));
   const deleteProject = (id: string) => { if(confirm("Delete Project?")) setProjects(prev => prev.filter(p => p.id !== id)); };
 
-  const exportSystem = async () => {
-      const dump = await encryptSnapshot({ projects, inventory, machines, vendors, docs }, securitySettings.passphrase);
+  const exportSystem = () => {
+      const dump = JSON.stringify({ projects, inventory, machines, vendors, docs });
       const blob = new Blob([dump], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -325,13 +172,8 @@ const App: React.FC = () => {
       link.click();
   };
 
-  const importSystem = async (json: string) => {
-      let data: any = null;
-      try {
-          data = await decryptSnapshot(json, securitySettings.passphrase);
-      } catch {
-          data = JSON.parse(json);
-      }
+  const importSystem = (json: string) => {
+      const data = JSON.parse(json);
       if(data.projects) setProjects(data.projects);
       if(data.inventory) setInventory(data.inventory);
       if(data.machines) setMachines(data.machines);
@@ -339,185 +181,44 @@ const App: React.FC = () => {
       if(data.docs) setDocs(data.docs);
   };
 
-  const markNotificationRead = (id: string) => notificationService.markRead(id);
-  const markAllNotificationsRead = () => notificationService.markAllRead();
-  const handleNotificationNavigate = (link: { view: ViewMode; id?: string }) => {
-    setCurrentView(link.view);
-    setSelectedProjectId(null);
-  };
+  // --- COMMAND PALETTE SEARCH LOGIC ---
+  const commandResults = () => {
+      if(!cmdQuery) return [];
+      const q = cmdQuery.toLowerCase();
+      const results: {type: string, label: string, desc: string, action: () => void}[] = [];
 
-  const updateSecuritySettings = (partial: Partial<SecuritySettings>) => {
-      setSecuritySettings(prev => ({ ...prev, ...partial }));
-  };
-
-  const updatePreferences = (partial: Partial<UserPreferences>) => {
-      setPreferences(prev => ({
-          ...prev,
-          appearance: { ...prev.appearance, ...(partial.appearance || {}) },
-          localization: { ...prev.localization, ...(partial.localization || {}) },
-          notifications: { ...prev.notifications, ...(partial.notifications || {}) },
-      }));
-  };
-
-  const updateBackupSettings = (partial: Partial<BackupSettings>) => {
-      setBackupSettings(prev => ({ ...prev, ...partial }));
-  };
-
-  const manualCloudSync = async () => {
-      if (!initialized) return;
-      await persistSnapshot(snapshotFromState());
-  };
-
-  const clearStockroomPreset = useCallback(() => setStockroomPresetSearch(null), []);
-
-  useEffect(() => {
-    const entries: SearchEntry[] = [];
-
-    projects.forEach((p) => {
-      entries.push({
-        id: `project-${p.id}`,
-        type: 'project',
-        title: p.title,
-        subtitle: p.status,
-        keywords: [p.description || '', ...(p.tasks?.map((t) => t.text) || [])],
-        action: () => {
-          setSelectedProjectId(p.id);
-          setIsCmdOpen(false);
-        },
+      // Projects
+      projects.filter(p => p.title.toLowerCase().includes(q)).forEach(p => {
+          results.push({ type: 'Project', label: p.title, desc: p.status, action: () => { setSelectedProjectId(p.id); setIsCmdOpen(false); }});
       });
-    });
-
-    inventory.forEach((item) => {
-      entries.push({
-        id: `inventory-${item.id}`,
-        type: 'inventory',
-        title: item.name,
-        subtitle: `${item.quantity} ${item.unit} • ${item.location}`,
-        keywords: [item.category, 'inventory', item.location],
-        action: () => {
-          setCurrentView('stockroom');
-          setStockroomPresetSearch(item.name);
-        },
+      // Inventory
+      inventory.filter(i => i.name.toLowerCase().includes(q)).forEach(i => {
+          results.push({ type: 'Stock', label: i.name, desc: `${i.quantity} ${i.unit}`, action: () => { setCurrentView('stockroom'); setIsCmdOpen(false); }});
       });
-    });
-
-    machines.forEach((machine) => {
-      entries.push({
-        id: `machine-${machine.id}`,
-        type: 'machine',
-        title: machine.name,
-        subtitle: machine.status,
-        keywords: [machine.type, machine.notes || ''],
-        action: () => {
-          setCurrentView('machines');
-        },
+      // Machines
+      machines.filter(m => m.name.toLowerCase().includes(q)).forEach(m => {
+          results.push({ type: 'Machine', label: m.name, desc: m.status, action: () => { setCurrentView('machines'); setIsCmdOpen(false); }});
       });
-    });
-
-    vendors.forEach((vendor) => {
-      entries.push({
-        id: `vendor-${vendor.id}`,
-        type: 'vendor',
-        title: vendor.name,
-        subtitle: `${vendor.category} • ${vendor.leadTime || 'Lead time unknown'}`,
-        keywords: [vendor.website, vendor.notes || ''],
-        action: () => setCurrentView('supply'),
-      });
-    });
-
-    docs.forEach((doc) => {
-      entries.push({
-        id: `doc-${doc.id}`,
-        type: 'document',
-        title: doc.title,
-        subtitle: `${doc.type} • ${doc.tags.join(', ')}`,
-        keywords: doc.tags,
-        action: () => setCurrentView('library'),
-      });
-    });
-
-    const actionEntries: SearchEntry[] = [
-      {
-        id: 'action-create-project',
-        type: 'action',
-        title: 'Create new project',
-        subtitle: 'Initialize a pipeline record',
-        keywords: ['new', 'project', 'add'],
-        action: () => {
-          const name = prompt('Project designation:');
-          if (name) addProject(name);
-        },
-      },
-      {
-        id: 'action-create-inventory',
-        type: 'action',
-        title: 'Create inventory item',
-        subtitle: 'Seed a stock entry from the palette',
-        keywords: ['stock', 'inventory', 'add'],
-        action: () => {
-          const name = prompt('Inventory item name:');
-          if (!name) return;
-          const newItem: InventoryItem = {
-            id: Date.now().toString(),
-            name,
-            category: 'General',
-            quantity: 0,
-            unit: 'pcs',
-            location: 'Unassigned',
-            minLevel: 5,
-            cost: 0,
-            lastUpdated: Date.now(),
-          };
-          setInventory((prev) => [newItem, ...prev]);
-          setCurrentView('stockroom');
-        },
-      },
-      {
-        id: 'action-create-vendor',
-        type: 'action',
-        title: 'Register vendor',
-        subtitle: 'Capture a new supply partner',
-        keywords: ['vendor', 'supply', 'add'],
-        action: () => {
-          const name = prompt('Vendor name:');
-          if (!name) return;
-          const newVendor: Vendor = {
-            id: Date.now().toString(),
-            name,
-            website: 'vendor.example.com',
-            category: 'General',
-            rating: 3,
-            leadTime: 'Unknown',
-            notes: '',
-          };
-          setVendors((prev) => [newVendor, ...prev]);
-          setCurrentView('supply');
-        },
-      },
-      {
-        id: 'action-open-analytics',
-        type: 'action',
-        title: 'Open Analytics dashboard',
-        subtitle: 'Navigate to operational reporting',
-        keywords: ['analytics', 'dashboard', 'metrics'],
-        action: () => setCurrentView('analytics'),
-      },
-      {
-        id: 'action-open-system',
-        type: 'action',
-        title: 'Open System Core',
-        subtitle: 'Backup, security, and sync controls',
-        keywords: ['system', 'settings', 'backup'],
-        action: () => setCurrentView('system'),
-      },
-    ];
-
-    searchIndexRef.current.setEntries([...entries, ...actionEntries]);
-  }, [projects, inventory, machines, vendors, docs, addProject]);
+      // Views
+      if('analytics'.includes(q)) results.push({ type: 'View', label: 'Analytics', desc: 'Dashboard', action: () => { setCurrentView('analytics'); setIsCmdOpen(false); }});
+      if('stockroom'.includes(q)) results.push({ type: 'View', label: 'Stockroom', desc: 'Inventory', action: () => { setCurrentView('stockroom'); setIsCmdOpen(false); }});
+      
+      return results;
+  };
 
   // --- RENDER HELPERS ---
   const filteredProjects = projects.filter(p => p.title.toLowerCase().includes(searchTerm.toLowerCase()));
   const selectedProject = projects.find(p => p.id === selectedProjectId);
+
+  const NavItem = ({ view, icon: Icon, label }: { view: ViewMode, icon: any, label: string }) => (
+      <button 
+        onClick={() => setCurrentView(view)}
+        className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all mb-1 ${currentView === view ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}
+      >
+        <Icon size={16} />
+        <span className="font-medium text-sm">{label}</span>
+      </button>
+  );
 
   const Breadcrumbs = () => {
       if(selectedProject) return (
@@ -547,42 +248,6 @@ const App: React.FC = () => {
       );
   };
 
-  const trimmedCmdQuery = cmdQuery.trim();
-  const dynamicPaletteActions: SearchEntry[] = [];
-
-  if (trimmedCmdQuery) {
-    dynamicPaletteActions.push({
-      id: `action-filter-projects-${trimmedCmdQuery}`,
-      type: 'action',
-      title: `Filter projects by "${trimmedCmdQuery}"`,
-      subtitle: 'Apply text to project registry filter',
-      keywords: ['filter', 'projects', 'search'],
-      action: () => {
-        setCurrentView('dashboard');
-        setSearchTerm(trimmedCmdQuery);
-      },
-    });
-
-    dynamicPaletteActions.push({
-      id: `action-filter-stock-${trimmedCmdQuery}`,
-      type: 'action',
-      title: `Filter inventory by "${trimmedCmdQuery}"`,
-      subtitle: 'Open stockroom scoped to this query',
-      keywords: ['filter', 'inventory', 'stockroom'],
-      action: () => {
-        setCurrentView('stockroom');
-        setStockroomPresetSearch(trimmedCmdQuery);
-      },
-    });
-  }
-
-  const paletteResults = searchIndexRef.current.search(cmdQuery, dynamicPaletteActions);
-
-  const handleCommandSelect = (res: SearchEntry) => {
-    res.action?.();
-    setIsCmdOpen(false);
-  };
-
   // If detailed view
   if (selectedProject) {
       return (
@@ -595,18 +260,36 @@ const App: React.FC = () => {
   }
 
   return (
-    <ResponsiveLayout
-        navGroups={navGroups}
-        breadcrumbs={<Breadcrumbs />}
-        onOpenCommand={() => setIsCmdOpen(true)}
-        headerActions={(
-            <div className="relative">
-                <Bell size={16} className="text-zinc-500 hover:text-zinc-300 cursor-pointer transition-colors" />
-                {unreadCount > 0 && (
-                    <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 bg-red-500 text-[10px] font-bold text-white rounded-full flex items-center justify-center">
-                        {unreadCount}
-                    </span>
-                )}
+    <div className="flex h-screen bg-zinc-950 text-zinc-200 font-sans">
+      
+      {/* Sidebar */}
+      <aside className="w-64 bg-zinc-950 text-zinc-400 flex flex-col flex-shrink-0 border-r border-zinc-900">
+        <div className="p-6">
+          <h1 className="font-serif text-2xl text-zinc-100 font-bold tracking-tight">Construct OS</h1>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">System V2.0</p>
+          </div>
+        </div>
+
+        <nav className="flex-1 px-4 space-y-6 overflow-y-auto">
+            <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Registry</div>
+                <NavItem view="dashboard" icon={LayoutDashboard} label="Active Projects" />
+            </div>
+            
+            <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Resources</div>
+                <NavItem view="stockroom" icon={Package} label="Stockroom" />
+                <NavItem view="machines" icon={Settings} label="Machine Park" />
+                <NavItem view="supply" icon={Truck} label="Supply Chain" />
+                <NavItem view="library" icon={Book} label="Library" />
+            </div>
+            
+            <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2">Operations</div>
+                <NavItem view="analytics" icon={BarChart3} label="Analytics" />
+                <NavItem view="system" icon={Database} label="System Core" />
             </div>
         </nav>
         
@@ -628,128 +311,149 @@ const App: React.FC = () => {
         {/* Header */}
         <header className="h-14 border-b border-zinc-900 bg-zinc-950 flex items-center justify-between px-6 flex-shrink-0">
              <Breadcrumbs />
+             
+             <div className="flex items-center gap-4">
+                 <button 
+                    onClick={() => setIsCmdOpen(true)}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded border border-zinc-800 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 transition-all"
+                 >
+                     <Command size={12} />
+                     <span>Search...</span>
+                     <span className="ml-2 bg-zinc-800 px-1 rounded text-[10px]">⌘K</span>
+                 </button>
 
-             <Stack direction="row" spacing={1.5} alignItems="center">
-                <Button
-                  variant="outlined"
-                  size={density === 'compact' ? 'small' : 'medium'}
-                  onClick={() => setIsCmdOpen(true)}
-                  startIcon={<Command size={14} />}
-                  sx={{ borderColor: 'divider', color: 'text.secondary' }}
-                >
-                  <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'inline' } }}>
-                    Search...
-                  </Typography>
-                  <MuiBox
-                    component="span"
-                    sx={{
-                      fontSize: 10,
-                      bgcolor: 'action.hover',
-                      px: 0.75,
-                      py: 0.25,
-                      borderRadius: 1,
-                      ml: 1,
-                      display: { xs: 'none', md: 'inline-flex' },
-                    }}
-                  >
-                    ⌘K
-                  </MuiBox>
-                </Button>
-                <IconButton color="inherit" aria-label="notifications">
-                  <Badge badgeContent={unreadCount} color="error" overlap="circular">
-                    <Bell size={18} />
-                  </Badge>
-                </IconButton>
-                <SettingsMenu />
-             </Stack>
+                 <div className="relative group">
+                     <Bell size={16} className={`cursor-pointer transition-colors ${notifications.length > 0 ? 'text-zinc-200' : 'text-zinc-500'}`} />
+                     {notifications.length > 0 && (
+                         <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                     )}
+                     
+                     {/* Notification Dropdown */}
+                     <div className="absolute right-0 top-full mt-2 w-72 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
+                        <div className="p-3 border-b border-zinc-800 text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                            System Alerts
+                        </div>
+                        <div className="max-h-64 overflow-y-auto">
+                            {notifications.length === 0 ? (
+                                <div className="p-4 text-center text-xs text-zinc-600">All systems nominal</div>
+                            ) : (
+                                notifications.map(n => (
+                                    <div key={n.id} className="p-3 border-b border-zinc-800 hover:bg-zinc-800/50">
+                                        <div className={`text-xs font-bold mb-1 flex items-center gap-2 ${n.type === 'alert' ? 'text-red-400' : 'text-blue-400'}`}>
+                                            {n.type === 'alert' ? <AlertCircle size={12} /> : <Activity size={12} />}
+                                            {n.type === 'alert' ? 'CRITICAL' : 'NOTICE'}
+                                        </div>
+                                        <div className="text-xs text-zinc-300 leading-tight">{n.message}</div>
+                                        <div className="text-[10px] text-zinc-600 mt-2 font-mono">{new Date(n.timestamp).toLocaleTimeString()}</div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                     </div>
+                 </div>
+             </div>
         </header>
 
-        <CommandPalette
-          isOpen={isCmdOpen}
-          query={cmdQuery}
-          results={paletteResults}
-          onClose={() => setIsCmdOpen(false)}
-          onQueryChange={setCmdQuery}
-          onSelect={handleCommandSelect}
-        />
-
-        {currentView === 'dashboard' && (
-            <div className="flex-1 h-full overflow-y-auto p-8 bg-zinc-950">
-                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between mb-8">
-                    <div>
-                        <h2 className="text-2xl font-serif font-bold text-zinc-100">Project Registry</h2>
-                        <p className="text-zinc-500 text-sm mt-1">Active pipelines and engineering status.</p>
+        {/* Global Command Palette Modal */}
+        {isCmdOpen && (
+            <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-32 animate-in fade-in duration-200">
+                <div className="bg-zinc-900 w-[600px] rounded-xl border border-zinc-700 shadow-2xl overflow-hidden flex flex-col">
+                    <div className="p-4 border-b border-zinc-800 flex items-center gap-3">
+                        <Search className="text-zinc-400" size={20} />
+                        <input 
+                            ref={cmdInputRef}
+                            value={cmdQuery}
+                            onChange={(e) => setCmdQuery(e.target.value)}
+                            placeholder="Type a command or search..."
+                            className="bg-transparent text-lg text-zinc-100 focus:outline-none flex-1 font-sans"
+                        />
+                        <button onClick={() => setIsCmdOpen(false)} className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">ESC</button>
                     </div>
-                    <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
-                         <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" size={14} />
-                            <input
-                                type="text"
-                                placeholder="Filter projects..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="pl-9 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-600 w-full sm:w-64 text-zinc-200"
-                            />
-                        </div>
-                        <button
-                            onClick={() => { const t = prompt("Project Designation:"); if(t) addProject(t); }}
-                            className="bg-zinc-100 text-zinc-900 px-4 py-2 rounded-md text-xs font-bold hover:bg-white flex items-center gap-2 uppercase tracking-wide transition-colors"
-                        >
-                            <Plus size={14} /> Initialize Project
-                        </button>
+                    <div className="max-h-96 overflow-y-auto p-2">
+                        {commandResults().length === 0 ? (
+                            <div className="text-center py-8 text-zinc-500 text-sm">No results found.</div>
+                        ) : (
+                            commandResults().map((res, i) => (
+                                <button 
+                                    key={i} 
+                                    onClick={res.action}
+                                    className="w-full text-left p-3 hover:bg-zinc-800 rounded-lg flex items-center justify-between group"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
+                                            res.type === 'Project' ? 'bg-blue-900/30 text-blue-400' : 
+                                            res.type === 'Stock' ? 'bg-green-900/30 text-green-400' :
+                                            res.type === 'Machine' ? 'bg-amber-900/30 text-amber-400' :
+                                            'bg-zinc-800 text-zinc-400'
+                                        }`}>{res.type}</span>
+                                        <span className="text-zinc-200 font-medium">{res.label}</span>
+                                    </div>
+                                    <span className="text-xs text-zinc-500 group-hover:text-zinc-400">{res.desc}</span>
+                                </button>
+                            ))
+                        )}
                     </div>
-                 </div>
+                </div>
+                <div className="absolute inset-0 -z-10" onClick={() => setIsCmdOpen(false)}></div>
+            </div>
+        )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {filteredProjects.length === 0 ? (
-                        <div className="col-span-full flex flex-col items-center justify-center text-zinc-700 py-20 border border-dashed border-zinc-800 rounded-xl">
-                            <Box size={48} className="mb-4 opacity-20" />
-                            <p className="font-mono text-sm">REGISTRY EMPTY</p>
+        {/* Content Views */}
+        <div className="flex-1 overflow-hidden relative">
+            {currentView === 'dashboard' && (
+                <div className="flex-1 h-full overflow-y-auto p-8 bg-zinc-950">
+                     <div className="flex justify-between items-end mb-8">
+                        <div>
+                            <h2 className="text-2xl font-serif font-bold text-zinc-100">Project Registry</h2>
+                            <p className="text-zinc-500 text-sm mt-1">Active pipelines and engineering status.</p>
                         </div>
-                    ) : (
-                        filteredProjects.map(project => (
-                            <div key={project.id} onClick={() => setSelectedProjectId(project.id)} className="cursor-pointer h-full">
-                                <ProjectCard
-                                    project={project}
-                                    onStatusChange={(id, status) => setProjects(p => p.map(pr => pr.id === id ? { ...pr, status } : pr))}
-                                    onDelete={deleteProject}
+                        <div className="flex gap-4">
+                             <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" size={14} />
+                                <input 
+                                    type="text" 
+                                    placeholder="Filter projects..." 
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="pl-9 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-600 w-64 text-zinc-200"
                                 />
                             </div>
-                        ))
-                    )}
+                            <button 
+                                onClick={() => { const t = prompt("Project Designation:"); if(t) addProject(t); }}
+                                className="bg-zinc-100 text-zinc-900 px-4 py-2 rounded-md text-xs font-bold hover:bg-white flex items-center gap-2 uppercase tracking-wide transition-colors"
+                            >
+                                <Plus size={14} /> Initialize Project
+                            </button>
+                        </div>
+                     </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        {filteredProjects.length === 0 ? (
+                            <div className="col-span-full flex flex-col items-center justify-center text-zinc-700 py-20 border border-dashed border-zinc-800 rounded-xl">
+                                <Box size={48} className="mb-4 opacity-20" />
+                                <p className="font-mono text-sm">REGISTRY EMPTY</p>
+                            </div>
+                        ) : (
+                            filteredProjects.map(project => (
+                                <div key={project.id} onClick={() => setSelectedProjectId(project.id)} className="cursor-pointer h-full">
+                                    <ProjectCard 
+                                        project={project} 
+                                        onStatusChange={(id, status) => setProjects(p => p.map(pr => pr.id === id ? { ...pr, status } : pr))}
+                                        onDelete={deleteProject}
+                                    />
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
             )}
 
-            {currentView === 'stockroom' && (
-              <Stockroom
-                items={inventory}
-                onUpdate={setInventory}
-                presetSearch={stockroomPresetSearch ?? undefined}
-                onClearPresetSearch={clearStockroomPreset}
-              />
-            )}
+            {currentView === 'stockroom' && <Stockroom items={inventory} onUpdate={setInventory} />}
             {currentView === 'machines' && <MachinePark machines={machines} onUpdate={setMachines} />}
             {currentView === 'supply' && <SupplyChain vendors={vendors} onUpdate={setVendors} />}
-            {currentView === 'library' && <Library docs={docs} onUpdate={setDocs} inventory={inventory} machines={machines} />}
+            {currentView === 'library' && <ReferenceLibrary docs={docs} onUpdate={setDocs} />}
             {currentView === 'analytics' && <Analytics projects={projects} inventory={inventory} machines={machines} />}
-            {currentView === 'system' && (
-                <SystemCore
-                    exportData={exportSystem}
-                    importData={importSystem}
-                    securitySettings={securitySettings}
-                    onUpdateSecurity={updateSecuritySettings}
-                    onSync={manualCloudSync}
-                    syncStatus={syncStatus}
-                    preferences={preferences}
-                    onUpdatePreferences={updatePreferences}
-                    backupSettings={backupSettings}
-                    onUpdateBackupSettings={updateBackupSettings}
-                    backups={backups}
-                    onCreateBackup={createBackup}
-                    onRestoreBackup={restoreBackup}
-                    onDeleteBackup={deleteBackup}
-                />
-            )}
+            {currentView === 'system' && <SystemCore exportData={exportSystem} importData={importSystem} />}
         </div>
 
       </main>
