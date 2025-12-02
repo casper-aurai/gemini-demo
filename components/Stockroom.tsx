@@ -1,14 +1,16 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { InventoryItem } from '../types';
 import { Package, Plus, Trash2, AlertTriangle, Search, Filter, ArrowUpDown, Clock3 } from 'lucide-react';
 
 interface StockroomProps {
     items: InventoryItem[];
     onUpdate: (items: InventoryItem[]) => void;
+    presetSearch?: string;
+    onClearPresetSearch?: () => void;
 }
 
-const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate }) => {
+const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate, presetSearch, onClearPresetSearch }) => {
     const [search, setSearch] = useState('');
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
     const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -16,6 +18,13 @@ const Stockroom: React.FC<StockroomProps> = ({ items, onUpdate }) => {
     const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'healthy' | 'caution' | 'critical'>('all');
     const [minStockLevel, setMinStockLevel] = useState(0);
     const [quickFilters, setQuickFilters] = useState({ lowStock: false, recent: false });
+
+    useEffect(() => {
+        if (typeof presetSearch === 'string') {
+            setSearch(presetSearch);
+            onClearPresetSearch?.();
+        }
+    }, [presetSearch, onClearPresetSearch]);
 
     const addItem = () => {
         const newItem: InventoryItem = {
