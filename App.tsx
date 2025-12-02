@@ -12,6 +12,9 @@ import SystemCore from './components/SystemCore';
 import CommandPalette from './components/CommandPalette';
 import SearchService, { SearchEntry } from './services/searchService';
 import { CloudSyncProvider, EncryptedLocalStorageProvider, SystemSnapshot } from './services/dataProvider';
+import { Badge, Box as MuiBox, Button, IconButton, Stack, Typography } from '@mui/material';
+import SettingsMenu from './components/SettingsMenu';
+import { useDensity } from './designSystem';
 
 import {
     LayoutDashboard, Plus, Search, Box, Package, Settings,
@@ -19,6 +22,7 @@ import {
 } from 'lucide-react';
 
 const App: React.FC = () => {
+  const { density } = useDensity();
   // --- STATE MANAGEMENT ---
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -492,26 +496,40 @@ const App: React.FC = () => {
         {/* Header */}
         <header className="h-14 border-b border-zinc-900 bg-zinc-950 flex items-center justify-between px-6 flex-shrink-0">
              <Breadcrumbs />
-             
-                 <div className="flex items-center gap-4">
-                 <button 
-                    onClick={() => setIsCmdOpen(true)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded border border-zinc-800 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 transition-all"
-                 >
-                     <Command size={12} />
-                     <span>Search...</span>
-                     <span className="ml-2 bg-zinc-800 px-1 rounded text-[10px]">⌘K</span>
-                 </button>
 
-                <div className="relative">
-                    <Bell size={16} className="text-zinc-500 hover:text-zinc-300 cursor-pointer transition-colors" />
-                    {unreadCount > 0 && (
-                        <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 bg-red-500 text-[10px] font-bold text-white rounded-full flex items-center justify-center">
-                            {unreadCount}
-                        </span>
-                    )}
-                </div>
-             </div>
+             <Stack direction="row" spacing={1.5} alignItems="center">
+                <Button
+                  variant="outlined"
+                  size={density === 'compact' ? 'small' : 'medium'}
+                  onClick={() => setIsCmdOpen(true)}
+                  startIcon={<Command size={14} />}
+                  sx={{ borderColor: 'divider', color: 'text.secondary' }}
+                >
+                  <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+                    Search...
+                  </Typography>
+                  <MuiBox
+                    component="span"
+                    sx={{
+                      fontSize: 10,
+                      bgcolor: 'action.hover',
+                      px: 0.75,
+                      py: 0.25,
+                      borderRadius: 1,
+                      ml: 1,
+                      display: { xs: 'none', md: 'inline-flex' },
+                    }}
+                  >
+                    ⌘K
+                  </MuiBox>
+                </Button>
+                <IconButton color="inherit" aria-label="notifications">
+                  <Badge badgeContent={unreadCount} color="error" overlap="circular">
+                    <Bell size={18} />
+                  </Badge>
+                </IconButton>
+                <SettingsMenu />
+             </Stack>
         </header>
 
         <CommandPalette
